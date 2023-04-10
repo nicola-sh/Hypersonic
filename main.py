@@ -1,101 +1,90 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Define constants
-g0 = 9.81   # m/s^2, gravitational acceleration at sea level
-Re = 6371000   # m, radius of the Earth
-Isp = 4500   # s, specific impulse of the engine
-m0 = 1000   # kg, initial mass of the aircraft
-S = 10   # m^2, cross-sectional area of the aircraft
-Cd = 0.1   # drag coefficient of the aircraft
-H0 = 2000   # m, initial altitude of the aircraft
-L0 = 0   # m, initial range of the aircraft
-v0 = 5000   # m/s, initial speed of the aircraft
-alpha = np.deg2rad(5)   # rad, thrust angle
-dt = 0.1   # s, time step
-tf = 10000   # s, final time
+# Constants
+g0 = 9.81  # m/s^2, gravitational acceleration
+R_earth = 6371000  # m, radius of the Earth
+I_sp = 3050  # s, specific impulse
+m0 = 1000  # kg, initial mass of the aircraft
+L0 = 0  # m, initial range of flight
+H0 = 2000  # m, initial altitude of flight
+V0 = 5000  # m/s, initial speed of flight
+T0 = 100000  # N, initial thrust of the engine
+alpha0 = np.radians(5)  # rad, initial angle between the thrust direction and the missile axis
 
-# Define functions
-def rho(H):
-    """Calculate air density as a function of altitude"""
-    return 1.225 * np.exp(-H/8000)
+# Time
+t0 = 0  # s, initial time
+tf = 200  # s, final time
+dt = 0.1  # s, time step
 
-def drag(V, H):
-    """Calculate drag force on the aircraft"""
-    return 0.5 * rho(H) * V**2 * S * Cd
+# Arrays
+t = np.arange(t0, tf, dt)
+m = np.zeros(len(t))
+V = np.zeros(len(t))
+theta = np.zeros(len(t))
+alpha = np.zeros(len(t))
+L = np.zeros(len(t))
+H = np.zeros(len(t))
+T = np.zeros(len(t))
+g = np.zeros(len(t))
 
-def thrust(m, V, H):
-    """Calculate thrust force of the engine"""
-    return T(m) - drag(V, H)
-
-def T(m):
-    """Calculate thrust as a function of mass"""
-    return 50000 * (m/m0)**0.75
-
-def m_dot(T):
-    """Calculate mass flow rate"""
-    return T / (g0 * Isp)
-
-def V_dot(T, alpha, m, V, theta, H):
-    """Calculate rate of change of speed"""
-    return (T * np.cos(alpha) - drag(V, H) - m_dot(T) * V) / m - g0 * np.sin(theta)
-
-def theta_dot(T, alpha, m, V, theta, H):
-    """Calculate rate of change of inclination angle"""
-    return (T * np.sin(alpha)) / (m * V) - (g0 * np.cos(theta)) / V + (V * np.cos(theta)) / (Re + H)
-
-def L_dot(V, theta, H):
-    """Calculate rate of change of range"""
-    return V * np.cos(theta) * Re / (Re + H)
-
-def H_dot(V, theta):
-    """Calculate rate of change of altitude"""
-    return V * np.sin(theta)
-
-# Initialize arrays
-t = np.arange(0, tf+dt, dt)
-V = np.zeros_like(t)
-theta = np.zeros_like(t)
-H = np.zeros_like(t)
-L = np.zeros_like(t)
-m = np.zeros_like(t)
-
-# Set initial conditions
-V[0] = v0
-theta[0] = np.pi/2
-H[0] = H0
-L[0] = L0
+# Initial values
 m[0] = m0
+V[0] = V0
+theta[0] = np.radians(89)
+alpha[0] = alpha0
+L[0] = L0
+H[0] = H0
+T[0] = T0
+g[0] = g0 * (R_earth / (R_earth + H[0])) ** 2
 
-# Solve system of equations using second order Runge-Kutta method
-i = 0
-while H[i] > 0:
-    # Calculate rate of change of variables
-    V_k1 = dt * V_dot(T(m[i]), alpha, m[i], V[i], theta[i], H[i])
-    theta_k1 = dt * theta_dot(T(m[i]), alpha, m[i], V[i], theta[i], H[i])
-    H_k1 = dt * H_dot(V[i], theta[i])
-    L_k1 = dt * L_dot(V[i], theta[i], H[i])
-    m_k1 = dt * m_dot(T(m[i]))
+# Second-order Runge-Kutta method
+for i in range(len(t) - 1):
+    # Calculating k1
+    k1_v = (T[i] * np.cos(alpha[i])) / m[i] - g[i] * np.sin(theta[i])
+    k1_theta = (T[i] * np.sin(alpha[i])) / (m[i] * V[i]) - (g[i] * np.cos(theta[i])) / V[i] + (
+                V[i] * np.cos(theta[i])) / (R_earth + H[i])
+    k1_L = V[i] * np.cos(theta[i]) * R_earth / (R_earth + H[i])
+    k1_H = V[i] * np.sin(theta[i])
+    k1_m = -T[i] / (g0 * I_sp)
+    k1_T = 0  # thrust is constant
 
-    V_k2 = dt * V_dot(T(m[i]), alpha, m[i] + 0.5*m_k1, V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1, H[i] + 0.5*H_k1)
-    theta_k2 = dt * theta_dot(T(m[i]), alpha, m[i] + 0.5*m_k1, V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1, H[i] + 0.5*H_k1)
-    H_k2 = dt * H_dot(V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1)
-    L_k2 = dt * L_dot(V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1, H[i] + 0.5*H_k1)
-    m_k2 = dt * m_dot(T(m[i] + 0.5*m_k1))
+    # Calculating intermediate values
+    m_int = m[i] + k1_m * dt / 2
+    V_int = V[i] + k1_v * dt / 2
+    theta_int = theta[i] + k1_theta * dt / 2
+    L_int = L[i] + k1_L * dt / 2
+    H_int = H[i] + k1_H * dt / 2
+    T_int = T[i] + k1_T * dt / 2
+    g_int = g0 * (R_earth / (R_earth + H_int)) ** 2
 
-    # Update variables
-    V[i+1] = V[i] + V_k2
-    theta[i+1] = theta[i] + theta_k2
-    H[i+1] = H[i] + H_k2
-    L[i+1] = L[i] + L_k2
-    m[i+1] = m[i] - m_k2
+    # Calculating k2
+    k2_v = (T_int * np.cos(alpha[i])) / m_int - g_int * np.sin(theta_int)
+    k2_theta = (T_int * np.sin(alpha[i])) / (m_int * V_int) - (g_int * np.cos(theta_int)) / V_int + (V_int * np.cos(theta_int)) / (R_earth + H_int)
+    k2_L = V_int * np.cos(theta_int) * R_earth / (R_earth + H_int)
+    k2_H = V_int * np.sin(theta_int)
+    k2_m = -T_int / (g0 * I_sp)
+    k2_T = 0 # thrust is constant
 
-    i += 1
+    # Updating values
+    m[i + 1] = m[i] + k2_m * dt
+    V[i + 1] = V[i] + k2_v * dt
+    theta[i + 1] = theta[i] + k2_theta * dt
+    L[i + 1] = L[i] + k2_L * dt
+    H[i + 1] = H[i] + k2_H * dt
+    T[i + 1] = T[i] + k2_T * dt
+    g[i + 1] = g0 * (R_earth / (R_earth + H[i + 1])) ** 2
+    alpha[i + 1] = alpha0 # angle of thrust is constant
 
+    # Check for termination condition
+    if H[i + 1] <= 0:
+        break
 
-# Plot results
-plt.plot(L/1000, H/1000)
-plt.xlabel('Range (km)')
-plt.ylabel('Altitude (km)')
-plt.title('Hypersonic Aircraft Trajectory')
+# Plotting results
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.plot(L[:i+2], V[:i+2], H[:i+2])
+ax.set_xlabel('L')
+ax.set_ylabel('V')
+ax.set_zlabel('H')
 plt.show()
