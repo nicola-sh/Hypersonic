@@ -1,69 +1,101 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Define constants
+g0 = 9.81   # m/s^2, gravitational acceleration at sea level
+Re = 6371000   # m, radius of the Earth
+Isp = 4500   # s, specific impulse of the engine
+m0 = 1000   # kg, initial mass of the aircraft
+S = 10   # m^2, cross-sectional area of the aircraft
+Cd = 0.1   # drag coefficient of the aircraft
+H0 = 2000   # m, initial altitude of the aircraft
+L0 = 0   # m, initial range of the aircraft
+v0 = 5000   # m/s, initial speed of the aircraft
+alpha = np.deg2rad(5)   # rad, thrust angle
+dt = 0.1   # s, time step
+tf = 10000   # s, final time
 
-# Define parameters and initial conditions
-T = 50000  # thrust
-m = 1000  # variable mass
-g = 9.81  # gravitational acceleration
-R_earth = 6371000  # radius of the Earth
-V0 = 5000  # initial velocity
-theta0 = 0.5  # initial angle of inclination (in radians)
-L0 = 0  # initial range
-H0 = 1000  # initial altitude
+# Define functions
+def rho(H):
+    """Calculate air density as a function of altitude"""
+    return 1.225 * np.exp(-H/8000)
 
-# Define the functions for the right-hand side of the differential equations
-def dVdt(V, theta, H):
-    return (T * np.cos(theta))/m - g * np.sin(H/(R_earth + H))
+def drag(V, H):
+    """Calculate drag force on the aircraft"""
+    return 0.5 * rho(H) * V**2 * S * Cd
 
-def dthetadt(V, theta, H):
-    return (T * np.sin(theta))/(m*V) - (g*np.cos(H/(R_earth + H)))/V + (V*np.cos(H/(R_earth + H)))/(R_earth + H)
+def thrust(m, V, H):
+    """Calculate thrust force of the engine"""
+    return T(m) - drag(V, H)
 
-def dLdt(V, theta, H):
-    return V*np.cos(theta)*(R_earth/(R_earth + H))
+def T(m):
+    """Calculate thrust as a function of mass"""
+    return 50000 * (m/m0)**0.75
 
-def dHdt(V, theta, H):
-    return V*np.sin(theta)
+def m_dot(T):
+    """Calculate mass flow rate"""
+    return T / (g0 * Isp)
 
-# Define the time step and the number of time steps
-dt = 0.6  # time step
-N = 10000  # number of time steps
+def V_dot(T, alpha, m, V, theta, H):
+    """Calculate rate of change of speed"""
+    return (T * np.cos(alpha) - drag(V, H) - m_dot(T) * V) / m - g0 * np.sin(theta)
 
-# Initialize arrays to store the values of V, theta, L, and H at each time step
-V = np.zeros(N)
-theta = np.zeros(N)
-L = np.zeros(N)
-H = np.zeros(N)
+def theta_dot(T, alpha, m, V, theta, H):
+    """Calculate rate of change of inclination angle"""
+    return (T * np.sin(alpha)) / (m * V) - (g0 * np.cos(theta)) / V + (V * np.cos(theta)) / (Re + H)
 
-# Set the initial values
-V[0] = V0
-theta[0] = theta0
-L[0] = L0
+def L_dot(V, theta, H):
+    """Calculate rate of change of range"""
+    return V * np.cos(theta) * Re / (Re + H)
+
+def H_dot(V, theta):
+    """Calculate rate of change of altitude"""
+    return V * np.sin(theta)
+
+# Initialize arrays
+t = np.arange(0, tf+dt, dt)
+V = np.zeros_like(t)
+theta = np.zeros_like(t)
+H = np.zeros_like(t)
+L = np.zeros_like(t)
+m = np.zeros_like(t)
+
+# Set initial conditions
+V[0] = v0
+theta[0] = np.pi/2
 H[0] = H0
+L[0] = L0
+m[0] = m0
 
-# Perform the numerical integration using the second-order Runge-Kutta method
-for i in range(1, N):
-    k1_V = dVdt(V[i-1], theta[i-1], H[i-1])
-    k1_theta = dthetadt(V[i-1], theta[i-1], H[i-1])
-    k1_L = dLdt(V[i-1], theta[i-1], H[i-1])
-    k1_H = dHdt(V[i-1], theta[i-1], H[i-1])
+# Solve system of equations using second order Runge-Kutta method
+i = 0
+while H[i] > 0:
+    # Calculate rate of change of variables
+    V_k1 = dt * V_dot(T(m[i]), alpha, m[i], V[i], theta[i], H[i])
+    theta_k1 = dt * theta_dot(T(m[i]), alpha, m[i], V[i], theta[i], H[i])
+    H_k1 = dt * H_dot(V[i], theta[i])
+    L_k1 = dt * L_dot(V[i], theta[i], H[i])
+    m_k1 = dt * m_dot(T(m[i]))
 
-    k2_V = dVdt(V[i - 1] + 0.5 * dt * k1_V, theta[i - 1] + 0.5 * dt * k1_theta, H[i - 1] + 0.5 * dt * k1_H)
-    k2_theta = dthetadt(V[i - 1] + 0.5 * dt * k1_V, theta[i - 1] + 0.5 * dt * k1_theta, H[i - 1] + 0.5 * dt * k1_H)
-    k2_L = dLdt(V[i - 1] + 0.5 * dt * k1_V, theta[i - 1] + 0.5 * dt * k1_theta, H[i - 1] + 0.5 * dt * k1_H)
-    k2_H = dHdt(V[i - 1] + 0.5 * dt * k1_V, theta[i - 1] + 0.5 * dt * k1_theta, H[i - 1] + 0.5 * dt * k1_H)
+    V_k2 = dt * V_dot(T(m[i]), alpha, m[i] + 0.5*m_k1, V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1, H[i] + 0.5*H_k1)
+    theta_k2 = dt * theta_dot(T(m[i]), alpha, m[i] + 0.5*m_k1, V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1, H[i] + 0.5*H_k1)
+    H_k2 = dt * H_dot(V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1)
+    L_k2 = dt * L_dot(V[i] + 0.5*V_k1, theta[i] + 0.5*theta_k1, H[i] + 0.5*H_k1)
+    m_k2 = dt * m_dot(T(m[i] + 0.5*m_k1))
 
-    V[i] = V[i - 1] + dt * k2_V
-    theta[i] = theta[i - 1] + dt * k2_theta
-    L[i] = L[i - 1] + dt * k2_L
-    H[i] = H[i - 1] + dt * k2_H
+    # Update variables
+    V[i+1] = V[i] + V_k2
+    theta[i+1] = theta[i] + theta_k2
+    H[i+1] = H[i] + H_k2
+    L[i+1] = L[i] + L_k2
+    m[i+1] = m[i] - m_k2
 
-#Plot the results
+    i += 1
 
 
-plt.figure(figsize=(10,10))
+# Plot results
 plt.plot(L/1000, H/1000)
 plt.xlabel('Range (km)')
 plt.ylabel('Altitude (km)')
-plt.title('Flight Trajectory')
+plt.title('Hypersonic Aircraft Trajectory')
 plt.show()
