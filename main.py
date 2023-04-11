@@ -1,90 +1,133 @@
 import numpy as np
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt, MatplotlibDeprecationWarning
+from scipy.integrate import odeint
+import pandas as pd
+import seaborn as sns
+import matplotlib
+import warnings
+
+warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
+
+
+# Задание функции правой части системы уравнений
+def integrate(y, t, T, m, I_sp, h, R_earth, m_fuel, alpha):
+    V, theta, x, y, m_fuel = y
+
+    if m_fuel <= 0:
+        T = 0
+
+    m_total = m + m_fuel
+
+    # Расчет производных
+    dV = (T * np.cos(alpha)) / m_total - g * np.sin(theta)
+    dtheta = ((T * np.sin(alpha)) / (m_total * V) - (g * np.cos(theta)) / V + (V * np.cos(theta)) / (R_earth + h))
+    dx = V * np.cos(theta)
+    dy = V * np.sin(theta)
+
+    # Расчет изменения массы топлива
+    if m_fuel > 0:
+        dm_fuel = -T / (g * I_sp)
+    else:
+        dm_fuel = 0
+
+    # Возвращаем производные в виде массива
+    return [dV, dtheta, dx, dy, dm_fuel]
+
 
 # Constants
-g0 = 9.81  # m/s^2, gravitational acceleration
-R_earth = 6371000  # m, radius of the Earth
-I_sp = 3050  # s, specific impulse
-m0 = 1000  # kg, initial mass of the aircraft
-L0 = 0  # m, initial range of flight
-H0 = 2000  # m, initial altitude of flight
-V0 = 5000  # m/s, initial speed of flight
-T0 = 100000  # N, initial thrust of the engine
-alpha0 = np.radians(5)  # rad, initial angle between the thrust direction and the missile axis
+g = 9.81  # gravitational acceleration, m/s^2
+R_earth = 6371000.0  # radius of the Earth, m
 
-# Time
-t0 = 0  # s, initial time
-tf = 200  # s, final time
-dt = 0.1  # s, time step
 
-# Arrays
-t = np.arange(t0, tf, dt)
-m = np.zeros(len(t))
-V = np.zeros(len(t))
-theta = np.zeros(len(t))
-alpha = np.zeros(len(t))
-L = np.zeros(len(t))
-H = np.zeros(len(t))
-T = np.zeros(len(t))
-g = np.zeros(len(t))
+# Задание начальных условий
+T = 200000.0  # thrust, N
+m = 1400.0  # initial mass, kg
+m_fuel = 450.0  # initial mass of fuel, kg
+v = 5000.0  # initial velocity, m/s
+x = 0.0  # initial Distance, m
+y = 2000.0  # initial altitude, m
+alpha = np.radians(0)  # initial angle of attack, radians
+theta = np.radians(0)  # initial angle of inclination of the flight trajectory, radians
+I_sp = 325.0  # specific impulse
 
-# Initial values
-m[0] = m0
-V[0] = V0
-theta[0] = np.radians(89)
-alpha[0] = alpha0
-L[0] = L0
-H[0] = H0
-T[0] = T0
-g[0] = g0 * (R_earth / (R_earth + H[0])) ** 2
+# Интервал интегрирования
+dt = 0.01  # time step, s
+t = 0  # initial time
+y0 = [v, theta, x, y, m_fuel]  # initial conditions
 
-# Second-order Runge-Kutta method
-for i in range(len(t) - 1):
-    # Calculating k1
-    k1_v = (T[i] * np.cos(alpha[i])) / m[i] - g[i] * np.sin(theta[i])
-    k1_theta = (T[i] * np.sin(alpha[i])) / (m[i] * V[i]) - (g[i] * np.cos(theta[i])) / V[i] + (
-                V[i] * np.cos(theta[i])) / (R_earth + H[i])
-    k1_L = V[i] * np.cos(theta[i]) * R_earth / (R_earth + H[i])
-    k1_H = V[i] * np.sin(theta[i])
-    k1_m = -T[i] / (g0 * I_sp)
-    k1_T = 0  # thrust is constant
+# Решение системы уравнений
+V_list = []
+theta_list = []
+x_list = []
+y_list = []
+m_fuel_list = []
+t_list = []
 
-    # Calculating intermediate values
-    m_int = m[i] + k1_m * dt / 2
-    V_int = V[i] + k1_v * dt / 2
-    theta_int = theta[i] + k1_theta * dt / 2
-    L_int = L[i] + k1_L * dt / 2
-    H_int = H[i] + k1_H * dt / 2
-    T_int = T[i] + k1_T * dt / 2
-    g_int = g0 * (R_earth / (R_earth + H_int)) ** 2
+while y0[3] > 0:
 
-    # Calculating k2
-    k2_v = (T_int * np.cos(alpha[i])) / m_int - g_int * np.sin(theta_int)
-    k2_theta = (T_int * np.sin(alpha[i])) / (m_int * V_int) - (g_int * np.cos(theta_int)) / V_int + (V_int * np.cos(theta_int)) / (R_earth + H_int)
-    k2_L = V_int * np.cos(theta_int) * R_earth / (R_earth + H_int)
-    k2_H = V_int * np.sin(theta_int)
-    k2_m = -T_int / (g0 * I_sp)
-    k2_T = 0 # thrust is constant
+    sol = odeint(integrate, y0,
+                 [t, t + dt],
+                 args=(T, m, I_sp, y0[3], R_earth, m_fuel, alpha))
+    y0 = sol[-1]
 
-    # Updating values
-    m[i + 1] = m[i] + k2_m * dt
-    V[i + 1] = V[i] + k2_v * dt
-    theta[i + 1] = theta[i] + k2_theta * dt
-    L[i + 1] = L[i] + k2_L * dt
-    H[i + 1] = H[i] + k2_H * dt
-    T[i + 1] = T[i] + k2_T * dt
-    g[i + 1] = g0 * (R_earth / (R_earth + H[i + 1])) ** 2
-    alpha[i + 1] = alpha0 # angle of thrust is constant
+    # Извлечение решения
+    V = sol[:, 0]
+    theta = sol[:, 1]
+    x = sol[:, 2]
+    y = sol[:, 3]
+    m_fuel = sol[:, 4]
 
-    # Check for termination condition
-    if H[i + 1] <= 0:
-        break
+    # Сохраняем результаты
+    V_list += list(V[:-1])
+    theta_list += list(theta[:-1])
+    x_list += list(x[:-1])
+    y_list += list(y[:-1])
+    m_fuel_list += list(m_fuel[:-1])
+    t_list += list(np.linspace(t, t+dt, len(V)-1))
 
-# Plotting results
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.plot(L[:i+2], V[:i+2], H[:i+2])
-ax.set_xlabel('L')
-ax.set_ylabel('V')
-ax.set_zlabel('H')
+    # Обновляем время
+    t += dt
+
+x_list_km = np.array(x_list) / 1000
+y_list_km = np.array(y_list) / 1000
+
+# Create a scatterplot of x and y
+sns.set_style("whitegrid")
+sns.set_palette("husl")
+sns.lineplot(x=x_list_km, y=y_list_km)
+plt.xlabel('Distance, km')
+plt.ylabel('Altitude, km')
 plt.show()
+
+
+# def pressure(h):
+#     "Calculates air pressure [Pa] at altitude [m]"
+#     # from equations at
+#     #   http://www.grc.nasa.gov/WWW/K-12/airplane/atmosmet.html
+#
+#     t = temperature(h)
+#
+#     if h <= 11000:
+#         # troposphere
+#         p = 101.29 * ((t + 273.1) / 288.08) ** 5.256
+#     elif h <= 25000:
+#         # lower stratosphere
+#         p = 22.65 * np.exp(1.73 - .000157 * h)
+#     elif h > 25000:
+#         p = 2.488 * ((t + 273.1) / 288.08) ** -11.388
+#     return p
+#
+#
+# def temperature(h):
+#     "Calculates air temperature [Celsius] at altitude [m]"
+#     #from equations at
+#     #   http://www.grc.nasa.gov/WWW/K-12/airplane/atmosmet.html
+#     if h <= 11000:
+#         #troposphere
+#         t = 15.04 - .00649*h
+#     elif h <= 25000:
+#         #lower stratosphere
+#         t = -56.46
+#     elif h > 25000:
+#         t = -131.21 + .00299*h
+#     return t
