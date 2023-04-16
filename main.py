@@ -17,7 +17,7 @@ x = 0.0  # initial Distance, m
 h = 2000.0  # initial altitude, m
 alpha = np.radians(30)  # initial angle of attack, radians
 theta = np.radians(0)  # initial angle of inclination of the flight trajectory, radians
-dt = 0.01  # time step, s
+dt = 0.1  # time step, s
 G_c = 100.0  # initial fuel burnout per 1 sec
 
 
@@ -51,14 +51,17 @@ y0 = [v, theta, x, h]  # initial conditions
 t_arr = [0.0]
 x_arr = [x]
 h_arr = [h]
+speed_arr = [v]
+m_arr = [m_ha + m_fuel]
 
 while h > 0.0:
-    # Update mass after fuel burnout if m_fuel = 0 m=m_ha
-    m_fuel = mass_after_fuel_burning(t, m_fuel)
-    if m_fuel > 0:
-        m_ha += m_fuel
 
-    m_total = m_ha
+    m_not_burned = mass_after_fuel_burning(t, m_fuel)
+    if m_not_burned > 0:
+        m_total = m_ha + m_not_burned
+    else:
+        m_total = 1000
+        T = 0
 
     # solve model
     sol = odeint(hypersonic_aircraft_model, y0, [t, t + dt], args=(R_earth, g, T, alpha, m_total))
@@ -74,30 +77,3 @@ while h > 0.0:
     x_arr.append(x)
     h_arr.append(h)
 
-
-# Зависимость высоты от дальности
-sns.set_style("darkgrid")
-plt.figure(figsize=(10, 6))
-sns.lineplot(x=sol[:, 2], y=sol[:, 3])
-plt.xlabel('Distance, m')
-plt.ylabel('Altitude, m')
-plt.title('Altitude vs Distance')
-
-# График времени
-sns.set_style("darkgrid")
-plt.figure(figsize=(10, 6))
-sns.lineplot(range(int(t/dt)), sol[:, 3])
-plt.xlabel('Time, s')
-plt.ylabel('Altitude, m')
-plt.title('Altitude vs Time')
-
-# График зависимости массы от времени
-sns.set_style("darkgrid")
-plt.figure(figsize=(10, 6))
-mass = [m_ha + mass_after_fuel_burning(i*dt, m_fuel) for i in range(int(t/dt))]
-sns.lineplot(range(int(t/dt)), mass)
-plt.xlabel('Time, s')
-plt.ylabel('Total Mass, kg')
-plt.title('Total Mass vs Time')
-
-plt.show()
