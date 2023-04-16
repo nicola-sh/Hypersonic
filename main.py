@@ -1,8 +1,11 @@
+import warnings
+
 import numpy as np
 import scipy.integrate as spi
 import seaborn as sns
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, MatplotlibDeprecationWarning
 from scipy.integrate import odeint
+warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
 # Constants
 g = 9.81  # gravitational acceleration, m/s^2
@@ -49,8 +52,8 @@ y0 = [v, theta, x, h]  # initial conditions
 
 # Arrays to store results
 t_arr = [0.0]
-x_arr = [x]
-h_arr = [h]
+x_arr = [x/1000]
+h_arr = [h/1000]
 speed_arr = [v]
 m_arr = [m_ha + m_fuel]
 
@@ -63,6 +66,7 @@ while h > 0.0:
         m_total = 1000
         T = 0
 
+
     # solve model
     sol = odeint(hypersonic_aircraft_model, y0, [t, t + dt], args=(R_earth, g, T, alpha, m_total))
 
@@ -74,6 +78,31 @@ while h > 0.0:
 
     # Store results
     t_arr.append(t)
-    x_arr.append(x)
-    h_arr.append(h)
+    x_arr.append(x/1000)
+    h_arr.append(h/1000)
+    speed_arr.append(V)
+    m_arr.append(m_total)
 
+# Plot of altitude versus range
+plt.figure()
+plt.plot(x_arr, h_arr)
+plt.xlabel('Range, km')
+plt.ylabel('Altitude, km')
+plt.title('Altitude versus Range')
+
+# Plot of speed versus time
+plt.figure()
+plt.plot(t_arr, speed_arr)
+plt.xlabel('Time, s')
+plt.ylabel('Speed, m/s')
+plt.title('Speed versus Time')
+
+# Plot of the dependence of mass on time
+plt.figure()
+mass_arr = [m_ha + mass_after_fuel_burning(t, m_fuel) for t in t_arr]
+plt.plot(t_arr, mass_arr)
+plt.xlabel('Time, s')
+plt.ylabel('Mass, kg')
+plt.title('Dependence of Mass on Time')
+
+plt.show()
