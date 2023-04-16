@@ -19,8 +19,8 @@ x = 0.0  # initial Distance, m
 h = 2000.0  # initial altitude, m
 alpha = np.radians(30)  # initial angle of attack, radians
 theta = np.radians(0)  # initial angle of inclination of the flight trajectory, radians
-dt = 5  # time step, s
-G_c = 10.5  # initial fuel burnout per 1 sec
+dt = 0.01  # time step, s
+G_c = 0.015  # initial fuel burnout per 1 sec
 
 
 def f(t):
@@ -86,7 +86,7 @@ while h > 0.0:
 sns.set_style("whitegrid")
 
 # Create a figure with 2 subplots, arranged in a vertical layout
-fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(5, 5))
+fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 10))
 
 # Plot 1: Altitude versus Range
 sns.lineplot(x=x_arr, y=h_arr, ax=ax1)
