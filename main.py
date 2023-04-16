@@ -1,5 +1,4 @@
 import warnings
-
 import numpy as np
 import scipy.integrate as spi
 import seaborn as sns
@@ -83,25 +82,27 @@ while h > 0.0:
     v_arr.append(V)
     m_arr.append(m_total)
 
-# Plot of altitude versus range
-plt.figure()
-plt.plot(x_arr, h_arr)
-plt.xlabel('Range, km')
-plt.ylabel('Altitude, km')
-plt.title('Altitude versus Range')
+# Set the style for the plot
+sns.set_style("whitegrid")
 
-# Plot of speed versus time
-plt.figure()
-plt.plot(t_arr, v_arr)
-plt.xlabel('Time, s')
-plt.ylabel('Speed, m/s')
-plt.title('Speed versus Time')
+# Create a figure with 2 subplots, arranged in a vertical layout
+fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(5, 5))
 
-# Plot of the dependence of mass on time
-plt.figure()
-plt.plot(t_arr, m_arr)
-plt.xlabel('Time, s')
-plt.ylabel('Mass, kg')
-plt.title('Dependence of Mass on Time')
+# Plot 1: Altitude versus Range
+sns.lineplot(x=x_arr, y=h_arr, ax=ax1)
+ax1.set_xlabel('Range, km')
+ax1.set_ylabel('Height, km')
+ax1.set_title('Height vs Range')
 
+# Plot 2 and 3: Speed versus Time and Dependence of Mass on Time
+sns.lineplot(x=t_arr, y=v_arr, ax=ax2, color='blue')
+sns.lineplot(x=t_arr, y=m_arr, ax=ax2, color='orange')
+ax2.set_xlabel('Time, s')
+ax2.set_ylabel('Speed, m/s / Mass, kg')
+ax2.set_title('Velocity and Mass by time')
+
+# Adjust the spacing between subplots
+plt.subplots_adjust(hspace=0.5)
+
+# Show the plot
 plt.show()
