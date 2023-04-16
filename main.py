@@ -24,6 +24,9 @@ theta = np.radians(0)       # initial angle of inclination of the flight traject
 dt = 0.01                   # time step, s
 G_c = 0.015                 # initial fuel burnout per dt
 
+# ballistic trajectory
+# planning trajectory
+# Ricocheting trajectory
 
 def f(t):
     return G_c
