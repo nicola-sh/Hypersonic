@@ -12,16 +12,16 @@ g = 9.81  # gravitational acceleration, m/s^2
 R_earth = 6371000.0  # radius of the Earth, m
 
 # Initial condition of Hypersonic Aircraft
-T = 200000.0  # thrust, N
+T = 100000.0  # thrust, N
 m_ha = 1000.0  # initial full mass of aircraft, kg
 m_fuel = 450.0  # initial full mass fuel of aircraft, kg
-v = 5000.0  # initial velocity, m/s
+v = 1700.0  # initial velocity, m/s
 x = 0.0  # initial Distance, m
 h = 2000.0  # initial altitude, m
 alpha = np.radians(30)  # initial angle of attack, radians
 theta = np.radians(0)  # initial angle of inclination of the flight trajectory, radians
-dt = 0.1  # time step, s
-G_c = 100.0  # initial fuel burnout per 1 sec
+dt = 5  # time step, s
+G_c = 10.5  # initial fuel burnout per 1 sec
 
 
 def f(t):
@@ -65,7 +65,7 @@ while h > 0.0:
         m_total = m_ha + m_fuel
     else:
         m_total = m_ha
-
+        T = 0
 
     # solve model
     sol = odeint(hypersonic_aircraft_model, y0, [t, t + dt], args=(R_earth, g, T, alpha, m_total))
