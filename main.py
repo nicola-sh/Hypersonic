@@ -54,17 +54,17 @@ y0 = [v, theta, x, h]  # initial conditions
 t_arr = [0.0]
 x_arr = [x/1000]
 h_arr = [h/1000]
-speed_arr = [v]
+v_arr = [v]
 m_arr = [m_ha + m_fuel]
+
 
 while h > 0.0:
 
-    m_not_burned = mass_after_fuel_burning(t, m_fuel)
-    if m_not_burned > 0:
-        m_total = m_ha + m_not_burned
+    if m_fuel > 0:
+        m_fuel = mass_after_fuel_burning(t, m_fuel)
+        m_total = m_ha + m_fuel
     else:
-        m_total = 1000
-        T = 0
+        m_total = m_ha
 
 
     # solve model
@@ -80,7 +80,7 @@ while h > 0.0:
     t_arr.append(t)
     x_arr.append(x/1000)
     h_arr.append(h/1000)
-    speed_arr.append(V)
+    v_arr.append(V)
     m_arr.append(m_total)
 
 # Plot of altitude versus range
@@ -92,15 +92,14 @@ plt.title('Altitude versus Range')
 
 # Plot of speed versus time
 plt.figure()
-plt.plot(t_arr, speed_arr)
+plt.plot(t_arr, v_arr)
 plt.xlabel('Time, s')
 plt.ylabel('Speed, m/s')
 plt.title('Speed versus Time')
 
 # Plot of the dependence of mass on time
 plt.figure()
-mass_arr = [m_ha + mass_after_fuel_burning(t, m_fuel) for t in t_arr]
-plt.plot(t_arr, mass_arr)
+plt.plot(t_arr, m_arr)
 plt.xlabel('Time, s')
 plt.ylabel('Mass, kg')
 plt.title('Dependence of Mass on Time')
