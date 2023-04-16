@@ -1,26 +1,28 @@
 import warnings
+
 import numpy as np
 import scipy.integrate as spi
 import seaborn as sns
 from matplotlib import pyplot as plt, MatplotlibDeprecationWarning
 from scipy.integrate import odeint
+
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
 # Constants
-g = 9.81  # gravitational acceleration, m/s^2
-R_earth = 6371000.0  # radius of the Earth, m
+g = 9.81                    # gravitational acceleration, m/s^2
+R_earth = 6371000.0         # radius of the Earth, m
 
 # Initial condition of Hypersonic Aircraft
-T = 100000.0  # thrust, N
-m_ha = 1000.0  # initial full mass of aircraft, kg
-m_fuel = 450.0  # initial full mass fuel of aircraft, kg
-v = 1700.0  # initial velocity, m/s
-x = 0.0  # initial Distance, m
-h = 2000.0  # initial altitude, m
-alpha = np.radians(30)  # initial angle of attack, radians
-theta = np.radians(0)  # initial angle of inclination of the flight trajectory, radians
-dt = 0.01  # time step, s
-G_c = 0.015  # initial fuel burnout per 1 sec
+T = 100000.0                # initial thrust, N
+m_ha = 1000.0               # initial full mass of aircraft, kg
+m_fuel = 450.0              # initial full mass fuel of aircraft, kg
+x = 0.0                     # initial Distance, m
+v = 1700.0                  # initial velocity, m/s
+h = 2000.0                  # initial altitude, m
+alpha = np.radians(30)      # initial angle of attack, radians
+theta = np.radians(0)       # initial angle of inclination of the flight trajectory, radians
+dt = 0.01                   # time step, s
+G_c = 0.015                 # initial fuel burnout per dt
 
 
 def f(t):
@@ -46,16 +48,15 @@ def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total):
 
 
 # Integration interval
-t = 0.0  # initial time
-y0 = [v, theta, x, h]  # initial conditions
+t = 0.0                     # initial time
+y0 = [v, theta, x, h]       # initial conditions
 
 # Arrays to store results
 t_arr = [0.0]
-x_arr = [x/1000]
-h_arr = [h/1000]
+x_arr = [x / 1000]
+h_arr = [h / 1000]
 v_arr = [v]
 m_arr = [m_ha + m_fuel]
-
 
 while h > 0.0:
 
@@ -77,10 +78,11 @@ while h > 0.0:
 
     # Store results
     t_arr.append(t)
-    x_arr.append(x/1000)
-    h_arr.append(h/1000)
+    x_arr.append(x / 1000)
+    h_arr.append(h / 1000)
     v_arr.append(V)
     m_arr.append(m_total)
+
 
 # Set the style for the plot
 sns.set_style("whitegrid")
