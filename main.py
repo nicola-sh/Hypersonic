@@ -9,8 +9,8 @@ from scipy.integrate import odeint
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
 # Constants
-g = 9.81                    # gravitational acceleration, m/s^2
-R_earth = 6371000.0         # radius of the Earth, m
+g = 9.8066                  # gravitational acceleration, m/s^2
+R_earth = 6370000.0         # radius of the Earth, m
 
 # Initial condition of Hypersonic Aircraft
 T = 100000.0                # initial thrust, N
