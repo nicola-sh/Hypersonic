@@ -13,16 +13,16 @@ g = 9.8066                  # gravitational acceleration, m/s^2
 R_earth = 6370000.0         # radius of the Earth, m
 
 # Initial condition of Hypersonic Aircraft
-T = 100000.0                # initial thrust, N
-m_ha = 1000.0               # initial full mass of aircraft, kg
-m_fuel = 450.0              # initial full mass fuel of aircraft, kg
+T = 100000.0                # +initial thrust, N
+m_ha = 1000.0               # +initial full mass of aircraft, kg
+m_fuel = 450.0              # +initial full mass fuel of aircraft, kg
 x = 0.0                     # initial Distance, m
-v = 1700.0                  # initial velocity, m/s
-h = 2000.0                  # initial altitude, m
-alpha = np.radians(30)      # initial angle of attack, radians
-theta = np.radians(0)       # initial angle of inclination of the flight trajectory, radians
+v = 4 * 340.0               # +initial velocity, m/s    1 mach = 340 m/s
+h = 2 * 1000.0              # initial altitude, m
+alpha = np.radians(30)      # +initial angle of attack, radians
+theta = np.radians(0)       # +initial angle of inclination of the flight trajectory, radians
 dt = 0.01                   # time step, s
-G_c = 0.015                 # initial fuel burnout per dt
+G_c = 0.02                  # +initial fuel burnout per dt
 
 # ballistic trajectory
 # planning trajectory
