@@ -1,5 +1,5 @@
 import warnings
-
+import pandas as pd
 import numpy as np
 import scipy.integrate as spi
 import seaborn as sns
@@ -17,12 +17,37 @@ T = 100000.0                # +initial thrust, N
 m_ha = 1000.0               # +initial full mass of aircraft, kg
 m_fuel = 450.0              # +initial full mass fuel of aircraft, kg
 x = 0.0                     # initial Distance, m
-v = 4 * 340.0               # +initial velocity, m/s    1 mach = 340 m/s
+v = 5 * 340.0               # +initial velocity, m/s    1 mach = 340 m/s
 h = 2 * 1000.0              # initial altitude, m
 alpha = np.radians(30)      # +initial angle of attack, radians
 theta = np.radians(0)       # +initial angle of inclination of the flight trajectory, radians
 dt = 0.01                   # time step, s
 G_c = 0.02                  # +initial fuel burnout per dt
+
+
+# Create a DataFrame to hold the initial conditions
+data = {'Параметры': ['Сила Тяги, Н',
+                      'Масса ЛА без топлива, кг',
+                      'Масса топлива, кг',
+                      'Начальная высота, м',
+                      'Начальная скорость, м/с',
+                      'Угол атака α, градусы',
+                      'Угол theta, градусы',
+                      'dt, с',
+                      'G_c, за dt'],
+        'Значение': [T, m_ha, m_fuel, h, v, np.degrees(alpha), np.degrees(theta), dt, G_c]}
+df = pd.DataFrame(data)
+
+# Create a table visualization using Matplotlib
+fig, ax = plt.subplots(figsize=(6, 8))
+ax.axis('off')
+ax.set_title('Заданные начальные параметры', fontsize=16)
+# Customize the table style
+table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc= 'left', bbox=[0, 0, 1, 1])
+table.set_fontsize(12)
+
+
+plt.show()
 
 # ballistic trajectory
 # planning trajectory
