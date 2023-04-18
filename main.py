@@ -8,23 +8,24 @@ from scipy.integrate import odeint
 
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
-# Constants
+# region Constants
 g = 9.8066                  # gravitational acceleration, m/s^2
 R_earth = 6370000.0         # radius of the Earth, m
+# endregion
 
 # Initial condition of Hypersonic Aircraft
 T = 100000.0                # +initial thrust, N
 m_ha = 1000.0               # +initial full mass of aircraft, kg
 m_fuel = 450.0              # +initial full mass fuel of aircraft, kg
 x = 0.0                     # initial Distance, m
-v = 5 * 340.0               # +initial velocity, m/s    1 mach = 340 m/s
 h = 2 * 1000.0              # initial altitude, m
+v = 5 * 340.0               # +initial velocity, m/s    1 mach = 340 m/s
 alpha = np.radians(30)      # +initial angle of attack, radians
 theta = np.radians(0)       # +initial angle of inclination of the flight trajectory, radians
 dt = 0.01                   # time step, s
 G_c = 0.02                  # +initial fuel burnout per dt
 
-
+# region Table with Initial conditions
 # Create a DataFrame to hold the initial conditions
 data = {'Параметры': ['Сила Тяги, Н',
                       'Масса ЛА без топлива, кг',
@@ -37,7 +38,6 @@ data = {'Параметры': ['Сила Тяги, Н',
                       'G_c, за dt'],
         'Значение': [T, m_ha, m_fuel, h, v, np.degrees(alpha), np.degrees(theta), dt, G_c]}
 df = pd.DataFrame(data)
-
 # Create a table visualization using Matplotlib
 fig, ax = plt.subplots(figsize=(6, 8))
 ax.axis('off')
@@ -45,14 +45,14 @@ ax.set_title('Заданные начальные параметры', fontsize=
 # Customize the table style
 table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc= 'left', bbox=[0, 0, 1, 1])
 table.set_fontsize(12)
-
-
 plt.show()
+# endregion Table with Initial conditions
 
 # ballistic trajectory
 # planning trajectory
 # Ricocheting trajectory
 
+# region List of Methods
 def f(t):
     return G_c
 
@@ -73,8 +73,9 @@ def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total):
     dy = V * np.sin(theta)
 
     return [dV, dtheta, dx, dy]
+# endregion
 
-
+# region Main program
 # Integration interval
 t = 0.0                     # initial time
 y0 = [v, theta, x, h]       # initial conditions
@@ -111,7 +112,9 @@ while h > 0.0:
     v_arr.append(V)
     m_arr.append(m_total)
 
+# endregion
 
+# region Output plots
 # Set the style for the plot
 sns.set_style("whitegrid")
 
@@ -136,3 +139,4 @@ plt.subplots_adjust(hspace=0.5)
 
 # Show the plot
 plt.show()
+# endregion
