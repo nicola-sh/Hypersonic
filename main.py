@@ -1,4 +1,3 @@
-# region Imports and warn
 import warnings
 import pandas as pd
 import numpy as np
@@ -8,18 +7,27 @@ from matplotlib import pyplot as plt, MatplotlibDeprecationWarning
 from scipy.integrate import odeint
 
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
-# endregion
 
-# TODO ballistic trajectory
-# TODO planning trajectory
-# TODO Ricocheting trajectory
 
-# region Constants
+def ballistic_trajectory(x, t):
+    # TODO
+    pass
+
+
+def planning_trajectory(x, t):
+    # TODO
+    pass
+
+
+def ricocheting_trajectory(x, t):
+    # TODO
+    pass
+
+# Constants
 g = 9.8066                  # gravitational acceleration, m/s^2
 R_earth = 6370000.0         # radius of the Earth, m
-# endregion
 
-# region Initial condition of Hypersonic Aircraft
+# Initial condition of Hypersonic Aircraft
 T = 100000.0                # +initial thrust, N
 m_ha = 1000.0               # +initial full mass of aircraft, kg
 m_fuel = 450.0              # +initial full mass fuel of aircraft, kg
@@ -30,7 +38,6 @@ alpha = np.radians(30)      # +initial angle of attack, radians
 theta = np.radians(0)       # +initial angle of inclination of the flight trajectory, radians
 dt = 0.01                   # time step, s
 G_c = 0.02                  # +initial fuel burnout per dt
-# endregion
 
 # region Table with Initial conditions
 # Create a DataFrame to hold the initial conditions
@@ -55,10 +62,8 @@ table.set_fontsize(12)
 plt.show()
 # endregion Table with Initial conditions
 
-# region List of Methods
 def f(t):
     return G_c
-
 
 def mass_after_fuel_burning(t, m_fuel):
     try:
@@ -115,7 +120,6 @@ while h > 0.0:
     v_arr.append(V)
     m_arr.append(m_total)
 
-# endregion
 
 # region Output plots
 # Set the style for the plot
