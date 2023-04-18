@@ -28,9 +28,9 @@ g = 9.8066                  # gravitational acceleration, m/s^2
 R_earth = 6370000.0         # radius of the Earth, m
 
 # Initial condition of Hypersonic Aircraft
-T = 100000.0                # +initial thrust, N
-m_ha = 1000.0               # +initial full mass of aircraft, kg
-m_fuel = 450.0              # +initial full mass fuel of aircraft, kg
+T = 100000.0                # +initial thrust force, N
+m_ha = 1000.0               # +initial mass of aircraft, kg
+m_fuel = 450.0              # +initial mass fuel of aircraft, kg
 x = 0.0                     # initial Distance, m
 h = 2 * 1000.0              # initial altitude, m
 v = 5 * 340.0               # +initial velocity, m/s    1 mach = 340 m/s
