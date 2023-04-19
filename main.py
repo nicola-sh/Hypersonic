@@ -66,9 +66,9 @@ x = 0.0                     # initial Distance, m
 y = 2 * 1000.0              # 0-40.000 initial altitude, m
 V = 3 * 340.0               # 2-6 +initial velocity, m/s    1 mach = 340 m/s
 alpha = np.radians(0)       # 0-10 +initial angle of attack, radians
-theta = np.radians(47)      # +initial angle of inclination of the flight trajectory, radians
+theta = np.radians(43)      # +initial angle of inclination of the flight trajectory, radians
 dt = 0.01                   # time step, s
-G_c = 0.001                  # +initial fuel burnout rate, N/s
+G_c = 0.0014                 # +initial fuel burnout rate
 I_sp = 15.0                 # +initial specific impulse
 
 length = 12.5
