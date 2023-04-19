@@ -1,3 +1,4 @@
+import datetime
 import warnings
 import pandas as pd
 import numpy as np
@@ -141,6 +142,8 @@ ax2.set_xlabel('Time, s')
 ax2.set_ylabel('Speed, m/s / Mass, kg')
 ax2.set_title('Velocity and Mass by time')
 
+now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+ax2.text(0.5, -0.2, f"Local Time: {now}", ha='center', va='center', transform=ax2.transAxes)
 # Adjust the spacing between subplots
 plt.subplots_adjust(hspace=0.5)
 
