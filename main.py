@@ -1,6 +1,5 @@
 import datetime
 import warnings
-import pandas as pd
 import numpy as np
 import scipy.integrate as spi
 import seaborn as sns
@@ -40,29 +39,6 @@ theta = np.radians(0)       # +initial angle of inclination of the flight trajec
 dt = 0.01                   # time step, s
 G_c = 0.02                  # +initial fuel burnout per dt
 
-# region Table with Initial conditions
-# Create a DataFrame to hold the initial conditions
-data = {'Параметры': ['Сила Тяги, Н',
-                      'Масса ЛА без топлива, кг',
-                      'Масса топлива, кг',
-                      'Начальная высота, м',
-                      'Начальная скорость, м/с',
-                      'Угол атака α, градусы',
-                      'Угол theta, градусы',
-                      'dt, с',
-                      'G_c, за dt'],
-        'Значение': [T, m_ha, m_fuel, h, v, np.degrees(alpha), np.degrees(theta), dt, G_c]}
-df = pd.DataFrame(data)
-# Create a table visualization using Matplotlib
-fig, ax = plt.subplots(figsize=(6, 8))
-ax.axis('off')
-ax.set_title('Заданные начальные параметры', fontsize=16)
-# Customize the table style
-table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc= 'left', bbox=[0, 0, 1, 1])
-table.set_fontsize(12)
-plt.show()
-# endregion Table with Initial conditions
-
 def f(t):
     return G_c
 
@@ -71,7 +47,6 @@ def mass_after_fuel_burning(t, m_fuel):
         return m_fuel - spi.quad(f, 0, t)[0]
     except spi.IntegrationWarning:
         return 0.0
-
 
 def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total):
     V, theta, x, h = y
