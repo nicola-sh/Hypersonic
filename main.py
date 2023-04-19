@@ -13,15 +13,81 @@ def ballistic_trajectory(x, t):
     # TODO
     pass
 
-
 def planning_trajectory(x, t):
     # TODO
     pass
 
-
 def ricocheting_trajectory(x, t):
     # TODO
     pass
+
+# ThrustEquation Thrust = dm/dt * g * I_sp
+# where:
+# dm/dt = mass flow rate
+# g = acceleration due to gravity
+# I_sp = specific impulse
+
+def ThrustEquation(t, m, g, I_sp):
+    return
+
+# The drag coefficient Cd is equal to the drag D divided by the quantity:
+# density r times half the velocity V squared times the reference area A.
+# Drag = CoeffcientDrag * rho * v^2 * (reference area / 2)
+def Drag(CoefficientDrag, rho, v, A):
+    return CoefficientDrag * rho * v**2 * (A / 2)
+
+# The lift coefficient Cl is equal to the lift L divided by the quantity:
+# density r times half the velocity V squared times the reference area A.
+# Lift = CoefficientLift * rho * v^2 * (reference area / 2)
+def Lift(CoefficientLift, rho, v, L, d):
+ return CoefficientLift * rho * v**2 * (L / 2)
+
+def density(h):
+    "Calculates air density at altitude"
+    rho0 = 1.225 #[kg/m^3] air density at sea level
+    if h < 19200:
+        #use barometric formula, where 8420 is effective height of atmosphere [m]
+        rho = rho0 * np.exp(-h/8420)
+    elif h > 19200 and h < 47000:
+        #use 1976 Standard Atmosphere model
+        #http://modelweb.gsfc.nasa.gov/atmos/us_standard.html
+        #from http://scipp.ucsc.edu/outreach/balloon/glost/environment3.html
+        rho = rho0 * (.857003 + h/57947)**-13.201
+    else:
+        #vacuum
+        rho = 1.e-6
+    return rho
+
+def temperature(h):
+    "Calculates air temperature [Celsius] at altitude [m]"
+    #from equations at
+    #   http://www.grc.nasa.gov/WWW/K-12/airplane/atmosmet.html
+    if h <= 11000:
+        #troposphere
+        t = 15.04 - .00649*h
+    elif h <= 25000:
+        #lower stratosphere
+        t = -56.46
+    elif h > 25000:
+        t = -131.21 + .00299*h
+    return t
+
+def pressure(h):
+    "Calculates air pressure [Pa] at altitude [m]"
+    # from equations at
+    #   http://www.grc.nasa.gov/WWW/K-12/airplane/atmosmet.html
+
+    t = temperature(h)
+
+    if h <= 11000:
+        # troposphere
+        p = 101.29 * ((t + 273.1) / 288.08) ** 5.256
+    elif h <= 25000:
+        # lower stratosphere
+        p = 22.65 * np.exp(1.73 - .000157 * h)
+    elif h > 25000:
+        p = 2.488 * ((t + 273.1) / 288.08) ** -11.388
+    return p
 
 # Constants
 g = 9.8066                  # gravitational acceleration, m/s^2
