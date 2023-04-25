@@ -2,26 +2,13 @@ import datetime
 import warnings
 import numpy as np
 import seaborn as sns
-from matplotlib import pyplot as plt, ticker, MatplotlibDeprecationWarning
+from matplotlib import pyplot as plt, MatplotlibDeprecationWarning
 import scipy.integrate as spi
 from scipy.integrate import odeint
-
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
 
 # region data
-# def ballistic_trajectory(x, t):
-#     # TODO
-#     pass
-#
-# def planning_trajectory(x, t):
-#     # TODO
-#     pass
-#
-# def ricocheting_trajectory(x, t):
-#     # TODO
-#     pass
-#
 # def temperature(h):
 #     "Calculates air temperature [Celsius] at altitude [m]"
 #     #from equations at
@@ -76,7 +63,7 @@ diameter = 0.5
 frontalArea = diameter**2/ (4 * np.pi)
 lowerArea = length * diameter
 
-CoefficientDrag = 0.4       # drag coefficient for cone 20 degrees
+CoefficientDrag = .4       # drag coefficient for cone 20 degrees
 CoefficientLift = 1.2       # +lift coefficient for cone 20 degrees
 def rhoDensity(h):
     "Calculates air density at altitude"
@@ -93,7 +80,6 @@ def rhoDensity(h):
         #vacuum
         rho = 1.e-6
     return rho
-
 
 def Drag(CoefficientDrag, h, v, frontalArea):
     return CoefficientDrag * rhoDensity(h) * v**2 * (frontalArea / 2)
@@ -136,8 +122,23 @@ x_arr = [x]
 y_arr = [y / 1000]
 m_arr = [m_total]
 thrust_arr = [0.0]
+lift_arr = [0.0]
+drag_arr = [0.0]
+alpha_arr = [np.degrees(alpha)]
 
 is_Engine = True
+
+is_ballistic_trajectory = False  # alpha = 0, горючее сгорает во время набора максимальной высоты и
+                                 # дальше летит пока не достигнет точки апогея и не достигнет высоты h = 0
+
+is_planning_trajectory = False   # набирает высоту => переходит к горизонтальному полету с исопльзованием lift,
+                                 # alpha определяется изсходя из требования равенства нулю проекций действующих сил,
+                                 # включая силу тяги двигаетля на вертикальную ось
+# if lift + T * np.cos(alpha) == 0: то есть ALPHA = ARCCOS(-LIFT / T) ИЛИ alpha_degrees = 180/np.pi * np.arccos(-Lift / Thrust)
+
+is_ricocheting_trajectory = False# При снижении ЛА с углом атаки alpha !=0 за счет возрастающего влияния аэродинамической подъемной силы
+                                 # возникает эффект рикошетирования ,когда высота полета может начать увеличиваться.
+                                 # И снова в момент набора высоты включить ненадолго двигатель и тогда получим несколько циклов рикошетирования
 
 while y > 0.0:
 
@@ -176,30 +177,51 @@ while y > 0.0:
     t_arr.append(t)
     v_arr.append(V / 340)
     theta_arr.append(np.degrees(theta))
+    alpha_arr.append(np.degrees(alpha))
     x_arr.append(x / 1000)
     y_arr.append(y / 1000)
     m_arr.append(m_total)
-    thrust_arr.append(T)
+    thrust_arr.append(T / 1000)
+    lift_arr.append(lift / 1000)
+    drag_arr.append(drag / 1000)
 
 
 # region Output plots
 sns.set_style("whitegrid")
 
-fig, ax1 = plt.subplots(figsize=(8, 8))
-sns.lineplot(x=x_arr, y=y_arr, ax=ax1, color='black', linewidth=2)
-ax1.set_xlabel('Дальность, км.')
-ax1.set_ylabel('Высота, км.')
-ax1.set_title('График зависимости дальности и высоты ЛА')
-ax1.set_xticks(np.linspace(np.min(x_arr), np.max(x_arr), 8))
-ax1.set_yticks(np.linspace(0, np.max(y_arr), 10))
+fig, (hx, thetaXalpha) = plt.subplots(nrows=2, ncols = 1, figsize=(12, 12), height_ratios=[3,2])
+plt.subplots_adjust(hspace=0.3)
+sns.lineplot(x=x_arr, y=y_arr, color='black', linewidth=3, ax=hx)
+sns.lineplot(x=x_arr, y=lift_arr, color='blue', ax=hx)
+sns.lineplot(x=x_arr, y=drag_arr, color='red', ax=hx)
+hx.legend(labels=["distance", "Lift", "Drag"], loc='upper right')
 
-fig, ax0 = plt.subplots(figsize=(8, 8))
-sns.lineplot(x=t_arr, y=thrust_arr, ax=ax0, color='black', linewidth=2)
-ax0.set_xlabel('Время, сек.')
-ax0.set_ylabel('Сила тяги, км.')
-ax0.set_title('График')
+plt.scatter(x=x_arr, y=theta_arr, s=1, color='blue')
+plt.scatter(x=x_arr, y=alpha_arr, s=1, color='red')
+thetaXalpha.legend(labels=["Theta", "Alpha"], loc='lower right')
 
-# Create a figure with 2 subplots, arranged in a vertical layout
+hx.set(ylabel='Высота, км. // Сила тяги и споротивления, кН',
+       xlabel='Дальность, км.',
+       yticks=np.linspace(0, np.max(y_arr), 10),
+       xticks=np.linspace(np.min(x_arr), np.max(x_arr), 10))
+
+thetaXalpha.set(xlabel='Дальность, км.',
+                ylabel='Угол Тета и Угол Альфа, град.',
+                yticks=np.linspace(np.min([np.min(theta_arr), np.min(alpha_arr)]),
+                                   np.max([np.max(theta_arr), np.max(alpha_arr)]), 8),
+                xticks=np.linspace(np.min(x_arr), np.max(x_arr), 10))
+thetaXalpha.invert_yaxis()
+
+
+
+# fig, axld = plt.subplots(figsize=(8, 8))
+# sns.lineplot(x=x_arr, y=lift_arr, color='blue', ax=axld)
+# sns.lineplot(x=x_arr, y=drag_arr, color='red', ax=axld)
+# axld.set_title('График сил: подьемная и сопротивления')
+# axld.set_xlabel('Дальность, км')
+# axld.set_ylabel('Сила в кН')
+
+
 fig, (ax2, ax3, ax4) = plt.subplots(nrows=3, ncols=1, figsize=(10,10), height_ratios=[2,1,1])
 
 # Plot 2: Velocity on Time
@@ -215,15 +237,14 @@ ax3.set_ylabel('Масса ЛА, кг.')
 ax3.set_title('График зависимости массы ЛА от времени')
 
 # Plot 4: Theta versus Time
-plt.scatter(theta_arr, t_arr, s=2, color='black')
-plt.xlabel('Угол Тета, град.')
-plt.ylabel('Время, сек.')
-plt.title('График зависимости угла Тета(наклона траектории полета) от времени')
-plt.xticks(np.linspace(np.min(theta_arr), np.max(theta_arr), 8))
+sns.lineplot(x=t_arr, y=thrust_arr, ax=ax4, color='black', linewidth=2)
+ax4.set_xlabel('Время, сек.')
+ax4.set_ylabel('Сила тяги, кН.')
+ax4.set_title('График')
 
 now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 ax4.text(0.5, -0.6, f"Данный график был сделан: {now}", ha='center', va='center', transform=ax4.transAxes)
-plt.subplots_adjust(hspace=0.8) # Adjust the spacing between subplots
+plt.subplots_adjust(hspace=0.8)
 
 plt.show()
 # endregion
