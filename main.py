@@ -5,6 +5,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt, MatplotlibDeprecationWarning
 import scipy.integrate as spi
 from scipy.integrate import odeint
+
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
 
@@ -55,7 +56,7 @@ V = 3 * 340.0               # 2-6 +initial velocity, m/s    1 mach = 340 m/s
 alpha = np.radians(0)       # 0-10 +initial angle of attack, radians
 theta = np.radians(43)      # +initial angle of inclination of the flight trajectory, radians
 dt = 0.01                   # time step, s
-G_c = 0.0014                 # +initial fuel burnout rate
+G_c = 0.002                 # +initial fuel burnout rate per dt
 I_sp = 15.0                 # +initial specific impulse
 
 length = 12.5
@@ -114,6 +115,10 @@ def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
 t = 0.0                     # initial time
 y0 = [V, theta, x, y]       # initial conditions
 
+# Initial drag and lift
+drag = Drag(CoefficientDrag, y, V, frontalArea)
+lift = Lift(CoefficientLift, y, V, frontalArea)
+
 # Arrays to store results
 t_arr = [0.0]
 v_arr = [V / 340]
@@ -122,8 +127,8 @@ x_arr = [x]
 y_arr = [y / 1000]
 m_arr = [m_total]
 thrust_arr = [0.0]
-lift_arr = [0.0]
-drag_arr = [0.0]
+lift_arr = [lift / 1000]
+drag_arr = [drag / 1000]
 alpha_arr = [np.degrees(alpha)]
 
 is_Engine = True
@@ -139,6 +144,7 @@ is_planning_trajectory = False   # набирает высоту => перехо
 is_ricocheting_trajectory = False# При снижении ЛА с углом атаки alpha !=0 за счет возрастающего влияния аэродинамической подъемной силы
                                  # возникает эффект рикошетирования ,когда высота полета может начать увеличиваться.
                                  # И снова в момент набора высоты включить ненадолго двигатель и тогда получим несколько циклов рикошетирования
+
 
 while y > 0.0:
 
@@ -188,30 +194,29 @@ while y > 0.0:
 
 # region Output plots
 sns.set_style("whitegrid")
-
 fig, (hx, thetaXalpha) = plt.subplots(nrows=2, ncols = 1, figsize=(12, 12), height_ratios=[3,2])
 plt.subplots_adjust(hspace=0.3)
-sns.lineplot(x=x_arr, y=y_arr, color='black', linewidth=3, ax=hx)
-sns.lineplot(x=x_arr, y=lift_arr, color='blue', ax=hx)
-sns.lineplot(x=x_arr, y=drag_arr, color='red', ax=hx)
-hx.legend(labels=["distance", "Lift", "Drag"], loc='upper right')
 
-plt.scatter(x=x_arr, y=theta_arr, s=1, color='blue')
-plt.scatter(x=x_arr, y=alpha_arr, s=1, color='red')
-thetaXalpha.legend(labels=["Theta", "Alpha"], loc='lower right')
+sns.lineplot(x=x_arr, y=y_arr, color='black', linewidth=3, ax=hx, label='Distance')
+sns.lineplot(x=x_arr, y=lift_arr, color='#512DA8', linewidth=2, ax=hx, label='Lift')
+sns.lineplot(x=x_arr, y=drag_arr, color='#f12e6d', linewidth=2, ax=hx, label='Drag')
+hx.legend(loc='upper right')
+
+plt.scatter(x=x_arr, y=theta_arr, s=1, color='#512DA8', label='Theta')
+plt.scatter(x=x_arr, y=alpha_arr, s=1, color='#f12e6d', label='Alpha')
+thetaXalpha.legend(loc='lower right')
 
 hx.set(ylabel='Высота, км. // Сила тяги и споротивления, кН',
        xlabel='Дальность, км.',
        yticks=np.linspace(0, np.max(y_arr), 10),
        xticks=np.linspace(np.min(x_arr), np.max(x_arr), 10))
-
 thetaXalpha.set(xlabel='Дальность, км.',
                 ylabel='Угол Тета и Угол Альфа, град.',
                 yticks=np.linspace(np.min([np.min(theta_arr), np.min(alpha_arr)]),
                                    np.max([np.max(theta_arr), np.max(alpha_arr)]), 8),
                 xticks=np.linspace(np.min(x_arr), np.max(x_arr), 10))
-thetaXalpha.invert_yaxis()
 
+thetaXalpha.invert_yaxis()
 
 
 # fig, axld = plt.subplots(figsize=(8, 8))
