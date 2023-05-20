@@ -30,15 +30,14 @@ def pressure(h):
 
     if h <= 11000:
         # troposphere
-        p = 101.29 * ((t + 273.1) / 288.15) ** 5.256
+        p = 101.29 * ((t + 273.1) / 288.08) ** 5.256
     elif h <= 25000:
         # lower stratosphere
         p = 22.65 * np.exp(1.73 - .000157 * h)
     elif h > 25000:
         # upper stratosphere
         p = 2.488 * ((t + 273.1) / 216.6) ** -11.388
-    return p * 1000
-
+    return p
 def density(h):
     "Calculates air density at altitude"
     rho0 = 1.225 #[kg/m^3] air density at sea level
@@ -55,11 +54,11 @@ def density(h):
         rho = 1.e-6
     return rho
 
-def Drag(Cd, h, v, Area):
-    return .5 * Cd * density(h) * v**2 * Area
+def Drag(CoefficientDrag, h, v, Area):
+    return CoefficientDrag * (density(h) * v**2 / 2) * Area
 
-def Lift(Cl, h, v, Area):
-    return .5 * Cl * density(h) * v**2  * Area
+def Lift(CoefficientLift, h, v, Area):
+    return CoefficientLift * (density(h) * v**2 / 2) * Area
 
 def f(t):
     return G_c
@@ -70,27 +69,16 @@ def mass_after_fuel_burning(t, m_fuel):
     except spi.IntegrationWarning:
         return 0.0
 
-def mdot(Area, gamma, R, Mach, h, time):
-    Pt = pressure(h)
-    Tt = temperature(h) + 273.15
-    return ((Area * Pt / np.sqrt(Tt)) * np.sqrt(gamma/R) * Mach * (1 + .5 * (gamma - 1) * Mach**2)**\
-        -((gamma + 1)/(gamma - 1)/2)) * time
-
-def massFlowRateVelocity(massFlowRate, h, Area):
-    return massFlowRate / (density(h) * Area)
-
 def thrust(m_fuel, g, I_sp):
     return m_fuel * g * I_sp # kg * (m/sec**2) * sec
 
 # bernuli eqution P + (1/2)ρV^2 = constant
-def pressureNozzle(h, V):
+def pressureE(h, V):
     return density(h) * V**2 / 2
 
 
-def thrustRamjet(mdot, velocityInlet, velocityNozzle, beta, phiS, AreaInlet, Area, Cd, qInlet, h):
-    Pout = pressureNozzle(h, velocityNozzle)
-    Pin = pressure(h)
-    return mdot * (beta * velocityInlet * phiS - velocityInlet) + Area * (Pout - Pin) - Cd * AreaInlet * qInlet
+def ThrustReal(mdotIn, mdotOut, velocityIn, velocityOut, V, h, Area):
+    return mdotIn * velocityIn - mdotOut * velocityOut + (pressureE(h, V) - pressure(h)) * Area
 
 def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
     V, theta, x, y = y
@@ -102,49 +90,54 @@ def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
 
     return [dV, dtheta, dx, dy]
 
+# mass flow rate of fuel by dt, kg/s
+#  R is the gas constant
+def mdotInlet(Area, gamma, R, Mach, h):
+    return (Area * pressure(h) / np.sqrt(temperature(h) + 273.15)) * np.sqrt(gamma/R) * Mach\
+        * (1 + .5 * (gamma - 1) * Mach**2)**-((gamma + 1)/(gamma - 1)/2)
+
+def velocityInlet(massFlowRate, h, Area):
+    return massFlowRate / (density(h) * Area)
+
+
+
 
 # Constants
 g = 9.8066                  # gravitational acceleration, m/s^2
 R_earth = 6370000.0         # radius of the Earth, m
-R = 287                     # Gas constant of air [J/(kg*K)]
-gamma = 1.4                 # Ratio of specific heats [K/J]
 
 # Initial condition of Hypersonic Aircraft
-length = 12.5                       # length of the HA, m
-diameter = 0.5                      # diameter of the HA, m
-radius = diameter / 2               # radius of the HA, m
-Area = np.pi * radius**2            # nozzle area of the ramjet, m^2
-AreaInlet = 0.54 * Area             # inlet area of the ramjet, m^2
+m_fuel = 450.0              # mass fuel of aircraft, kg
+m_ha = 1440.0 - m_fuel      # mass of aircraft, kg
+m_total = m_ha + m_fuel     # total mass of aircraft, kg
+x = 0.0                     # Distance, m
+y = 2 * 1000.0              # altitude, m
+Mach = 3.0                  # Mach number, m/s
+V = Mach * 340.0            # velocity, m/s
+alpha = np.radians(0)       # angle of attack, radians
+theta = np.radians(0)       # angle of inclination of the flight trajectory, radians
+psi = np.radians(0)         # pitch angle, radians
 
-phiS = 0.97                         # nozzle speed coefficient
-beta = 1                            # relative increase in the mass of the working fluid due to fuel supply
-qInlet = 1
-G_c = 0.0012                        # fuel burnout rate per dt 0.0012
-I_sp = 10.0                         # specific impulse, sec ~1500-2000 sec for scramjet
+G_c = 0.0012                # fuel burnout rate per dt 0.0012
+I_sp = 10.0                 # specific impulse, sec ~1500-2000 sec for scramjet
 
-m_fuel = 450.0                      # mass fuel of aircraft, kg
-m_ha = 1440.0 - m_fuel              # mass of aircraft, kg
-m_total = m_ha + m_fuel             # total mass of aircraft, kg
-x = 0.0                             # Distance, m
-y = 20 * 1000.0                      # altitude, m
-Mach = 3.0                          # Mach number, m/s
-V = Mach * 340.0                    # velocity, m/s
-alpha = np.radians(0)               # angle of attack, radians
-theta = np.radians(0)               # angle of inclination of the flight trajectory, radians
-psi = np.radians(0)                 # pitch angle, radians
+length = 12.5                               # length of the HA, m
+diameter = 0.5                              # diameter of the HA, m
+radius = diameter / 2                       # radius of the HA, m
+Area = np.pi * radius**2             # frontal area of the HA, m^2
+totalArea = 2 * np.pi * radius * length     # lower area of the HA, m^2
 
-Cd = .3                             # drag coefficient for cone 20 degrees
-Cl = .4                             # lift coefficient for cone 20 degrees
-lift = 0.0                          # lift force, N
-drag = 0.0                          # drag force, N
+lift = 0.0
+drag = 0.0
+CoefficientDrag = .4        # drag coefficient for cone 20 degrees
+CoefficientLift = .5        # lift coefficient for cone 20 degrees
 
+# R = 287  # Gas constant of air [J/(kg*K)]
+mdotIn = mdotInlet(Area, 1.4, 0.000287, Mach, y)
+# для сжигания 1 грамма водорода требуется 8 грамм кислорода
+mOxygen = mdotIn * 0.21
+velocityIn = velocityInlet(mdotIn, y, Area)
 
-massFlowRate = mdot(AreaInlet, gamma, R, Mach, y, 1)   # kg/s
-airVelocityInlet = massFlowRateVelocity(massFlowRate, y, AreaInlet) # m/s
-airVelocityOut = (Area / AreaInlet) * airVelocityInlet #  m/s
-
-thrustRamjet_test = thrustRamjet(massFlowRate, airVelocityInlet, airVelocityOut, beta, phiS,
-                                 AreaInlet, Area, Cd, qInlet, y)
 
 is_Engine = True
 is_ballistic_trajectory = True
@@ -155,18 +148,18 @@ flag = False
 if is_ballistic_trajectory:
     alpha = np.radians(0)
     theta = np.radians(29.7)
-    drag = Drag(Cd, y, V, Area)
+    drag = Drag(CoefficientDrag, y, V, Area)
     lift = 0
 elif is_planning_trajectory:
     alpha = np.radians(0)
     theta = np.radians(30)
-    drag = Drag(Cd, y, V, Area)
-    lift = Lift(Cl, y, V, Area)
+    drag = Drag(CoefficientDrag, y, V, Area)
+    lift = Lift(CoefficientLift, y, V, Area)
 elif is_ricocheting_trajectory:
     alpha = np.radians(0)
     theta = np.radians(30)
-    drag = Drag(Cd, y, V, Area)
-    lift = Lift(Cl, y, V, Area)
+    drag = Drag(CoefficientDrag, y, V, Area)
+    lift = Lift(CoefficientLift, y, V, Area)
 
 
 # Integration interval
@@ -253,14 +246,14 @@ while y > 0.0:
     sol = odeint(hypersonic_aircraft_model, y0, [t, t + dt], args=(R_earth, g, T, alpha, m_total, drag, lift))
 
     if is_ballistic_trajectory:
-        drag = Drag(Cd, y, V, Area)
+        drag = Drag(CoefficientDrag, y, V, Area)
         lift = 0
     elif is_planning_trajectory:
-        drag = Drag(Cd, y, V, Area)
-        lift = Lift(Cl, y, V, Area)
+        drag = Drag(CoefficientDrag, y, V, Area)
+        lift = Lift(CoefficientLift, y, V, Area)
     elif is_ricocheting_trajectory:
-        drag = Drag(Cd, y, V, Area)
-        lift = Lift(Cl, y, V, Area)
+        drag = Drag(CoefficientDrag, y, V, Area)
+        lift = Lift(CoefficientLift, y, V, Area)
 
     weight = m_total * g
     # Update y0
