@@ -7,6 +7,16 @@ warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 import scipy.integrate as spi
 from scipy.integrate import odeint
 
+def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
+    V, theta, x, y = y
+
+    dV = (T * np.cos(alpha) - drag) / m_total - g * np.sin(theta)
+    dtheta = (T * np.sin(alpha) + lift) / (m_total * V)  - (g * np.cos(theta)) / V + (V * np.cos(theta)) / (R_earth + y)
+    dx = V * np.cos(theta) * R_earth / (R_earth + y)
+    dy = V * np.sin(theta)
+
+    return [dV, dtheta, dx, dy]
+
 def temperature(h):
     "Calculates air temperature [Celsius] at altitude [m]"
     # from equations at
@@ -79,28 +89,20 @@ def mdot(Area, gamma, R, Mach, h, time):
 def massFlowRateVelocity(massFlowRate, h, Area):
     return massFlowRate / (density(h) * Area)
 
-def thrust(m_fuel, g, I_sp):
-    return m_fuel * g * I_sp # kg * (m/sec**2) * sec
+def thrust(massFlowRate, g, I_sp):
+    return massFlowRate * g * I_sp # kg * (m/sec**2) * sec
 
-# bernuli eqution P + (1/2)ρV^2 = constant
-def pressureNozzle(h, V):
-    return density(h) * V**2 / 2
+# # bernuli eqution P + (1/2)ρV^2 = constant
+# def pressureNozzle(h, V):
+#     return density(h) * V**2 / 2
+#
+#
+# def thrustRamjet(mdot, velocityInlet, velocityNozzle, beta, phiS, AreaInlet, Area, Cd, qInlet, h):
+#     Pin = pressureNozzle(h, velocityInlet)
+#     Pout = pressure(h)
+#     return mdot * (beta * velocityInlet * phiS - velocityInlet) + Area * (Pout - Pin) - Cd * AreaInlet * qInlet
 
 
-def thrustRamjet(mdot, velocityInlet, velocityNozzle, beta, phiS, AreaInlet, Area, Cd, qInlet, h):
-    Pout = pressureNozzle(h, velocityNozzle)
-    Pin = pressure(h)
-    return mdot * (beta * velocityInlet * phiS - velocityInlet) + Area * (Pout - Pin) - Cd * AreaInlet * qInlet
-
-def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
-    V, theta, x, y = y
-
-    dV = (T * np.cos(alpha) - drag) / m_total - g * np.sin(theta)
-    dtheta = (T * np.sin(alpha) + lift) / (m_total * V)  - (g * np.cos(theta)) / V + (V * np.cos(theta)) / (R_earth + y)
-    dx = V * np.cos(theta) * R_earth / (R_earth + y)
-    dy = V * np.sin(theta)
-
-    return [dV, dtheta, dx, dy]
 
 
 # Constants
@@ -108,6 +110,12 @@ g = 9.8066                  # gravitational acceleration, m/s^2
 R_earth = 6370000.0         # radius of the Earth, m
 R = 287                     # Gas constant of air [J/(kg*K)]
 gamma = 1.4                 # Ratio of specific heats [K/J]
+
+# Integration interval
+t = 0.0                     # initial time, sec
+tburnout = 0.0
+dt = 0.01                   # time step, sec
+tEND = 30000
 
 # Initial condition of Hypersonic Aircraft
 length = 12.5                       # length of the HA, m
@@ -119,16 +127,16 @@ AreaInlet = 0.54 * Area             # inlet area of the ramjet, m^2
 phiS = 0.97                         # nozzle speed coefficient
 beta = 1                            # relative increase in the mass of the working fluid due to fuel supply
 qInlet = 1
-G_c = 0.0012                        # fuel burnout rate per dt 0.0012
-I_sp = 10.0                         # specific impulse, sec ~1500-2000 sec for scramjet
+G_c = 0.12 * dt                        # fuel burnout rate per dt 0.0012
+I_sp = 1200.0                         # specific impulse, sec ~1500-2000 sec for scramjet
 
 m_fuel = 450.0                      # mass fuel of aircraft, kg
 m_ha = 1440.0 - m_fuel              # mass of aircraft, kg
 m_total = m_ha + m_fuel             # total mass of aircraft, kg
 x = 0.0                             # Distance, m
-y = 20 * 1000.0                      # altitude, m
-Mach = 3.0                          # Mach number, m/s
-V = Mach * 340.0                    # velocity, m/s
+y = 2 * 1000.0                      # altitude, m
+V = 3 * 340.0                    # velocity, m/s
+Mach = V / 340.0                         # Mach number, m/s
 alpha = np.radians(0)               # angle of attack, radians
 theta = np.radians(0)               # angle of inclination of the flight trajectory, radians
 psi = np.radians(0)                 # pitch angle, radians
@@ -138,13 +146,22 @@ Cl = .4                             # lift coefficient for cone 20 degrees
 lift = 0.0                          # lift force, N
 drag = 0.0                          # drag force, N
 
+phiF = 1.0
+co2 = 0.21
+fSt = 0.125
 
-massFlowRate = mdot(AreaInlet, gamma, R, Mach, y, 1)   # kg/s
-airVelocityInlet = massFlowRateVelocity(massFlowRate, y, AreaInlet) # m/s
-airVelocityOut = (Area / AreaInlet) * airVelocityInlet #  m/s
 
-thrustRamjet_test = thrustRamjet(massFlowRate, airVelocityInlet, airVelocityOut, beta, phiS,
-                                 AreaInlet, Area, Cd, qInlet, y)
+# mDotAir = mdot(Area, gamma, R, Mach, y, 1)
+mDotAir = density(y) * V * AreaInlet
+mDotFuel = phiF * co2 * fSt * mDotAir
+TForce = I_sp * mDotFuel * g
+# airVelocityInlet = massFlowRateVelocity(mdt, y, AreaInlet)     # m/s
+# airVelocityOut = (AreaInlet / Area) * airVelocityInlet                  # m/s
+#
+# thrustRamjet_test = thrustRamjet(mdt, airVelocityInlet,
+#                     airVelocityOut, beta, phiS, AreaInlet, Area, Cd, qInlet, y)
+#
+# thrustSpecImpulse = thrustRamjet_test / mdt
 
 is_Engine = True
 is_ballistic_trajectory = True
@@ -169,9 +186,7 @@ elif is_ricocheting_trajectory:
     lift = Lift(Cl, y, V, Area)
 
 
-# Integration interval
-t = 0.0                     # initial time, sec
-dt = 0.01                   # time step, sec
+
 y0 = [V, theta, x, y]       # initial conditions
 weight = m_total * g
 
@@ -191,7 +206,7 @@ lift_arr = [lift / 1000]
 drag_arr = [drag / 1000]
 weight_arr = [weight / 1000]
 
-while y > 0.0:
+while y > 0.0 and t < tEND:
 
     # if V < 2 * 340.0:
     #     I_sp = 12.0
@@ -241,11 +256,20 @@ while y > 0.0:
             is_Engine = False
 
     # Engine
+
+
     if m_fuel > 0 and is_Engine == True:
         # alpha = np.radians(6)
-        m_fuel = mass_after_fuel_burning(t, m_fuel)
+        # m_fuel = mass_after_fuel_burning(t, m_fuel)
+        mDotAir = density(y) * V * AreaInlet
+        mDotFuel = phiF * co2 * fSt * mDotAir
+
+        m_fuel -= mDotFuel
         m_total = m_ha + m_fuel
-        T = thrust(m_fuel, g, I_sp)
+
+        T = I_sp * mDotFuel * g
+
+        # T = thrust(massFlowRate, g, I_sp)
     else:
         m_total = m_ha + m_fuel
         T = 0
