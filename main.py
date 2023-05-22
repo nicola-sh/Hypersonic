@@ -72,14 +72,6 @@ def mass_after_fuel_burning(t, m_fuel):
 def thrust(m_fuel, g, I_sp):
     return m_fuel * g * I_sp # kg * (m/sec**2) * sec
 
-# bernuli eqution P + (1/2)ρV^2 = constant
-def pressureE(h, V):
-    return density(h) * V**2 / 2
-
-
-def ThrustReal(mdotIn, mdotOut, velocityIn, velocityOut, V, h, Area):
-    return mdotIn * velocityIn - mdotOut * velocityOut + (pressureE(h, V) - pressure(h)) * Area
-
 def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
     V, theta, x, y = y
 
@@ -89,17 +81,6 @@ def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
     dy = V * np.sin(theta)
 
     return [dV, dtheta, dx, dy]
-
-# mass flow rate of fuel by dt, kg/s
-#  R is the gas constant
-def mdotInlet(Area, gamma, R, Mach, h):
-    return (Area * pressure(h) / np.sqrt(temperature(h) + 273.15)) * np.sqrt(gamma/R) * Mach\
-        * (1 + .5 * (gamma - 1) * Mach**2)**-((gamma + 1)/(gamma - 1)/2)
-
-def velocityInlet(massFlowRate, h, Area):
-    return massFlowRate / (density(h) * Area)
-
-
 
 
 # Constants
@@ -118,7 +99,7 @@ alpha = np.radians(0)       # angle of attack, radians
 theta = np.radians(0)       # angle of inclination of the flight trajectory, radians
 psi = np.radians(0)         # pitch angle, radians
 
-G_c = 0.0012                # fuel burnout rate per dt 0.0012
+G_c = 0.0015                # fuel burnout rate per dt 0.0012
 I_sp = 10.0                 # specific impulse, sec ~1500-2000 sec for scramjet
 
 length = 12.5                               # length of the HA, m
@@ -127,48 +108,42 @@ radius = diameter / 2                       # radius of the HA, m
 Area = np.pi * radius**2             # frontal area of the HA, m^2
 totalArea = 2 * np.pi * radius * length     # lower area of the HA, m^2
 
-lift = 0.0
-drag = 0.0
 CoefficientDrag = .4        # drag coefficient for cone 20 degrees
 CoefficientLift = .5        # lift coefficient for cone 20 degrees
 
-# R = 287  # Gas constant of air [J/(kg*K)]
-mdotIn = mdotInlet(Area, 1.4, 0.000287, Mach, y)
-# для сжигания 1 грамма водорода требуется 8 грамм кислорода
-mOxygen = mdotIn * 0.21
-velocityIn = velocityInlet(mdotIn, y, Area)
-
-
+lift = 0.0
+drag = 0.0
 is_Engine = True
-is_ballistic_trajectory = True
-is_planning_trajectory = False
+is_ballistic_trajectory = False
 is_ricocheting_trajectory = False
-flag = False
+is_planning_trajectory = True
+
 
 if is_ballistic_trajectory:
     alpha = np.radians(0)
     theta = np.radians(29.7)
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = 0
-elif is_planning_trajectory:
-    alpha = np.radians(0)
-    theta = np.radians(30)
-    drag = Drag(CoefficientDrag, y, V, Area)
-    lift = Lift(CoefficientLift, y, V, Area)
 elif is_ricocheting_trajectory:
     alpha = np.radians(0)
-    theta = np.radians(30)
+    theta = np.radians(43)
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = Lift(CoefficientLift, y, V, Area)
+elif is_planning_trajectory:
+    alpha = np.radians(0)
+    theta = np.radians(43)
+    drag = Drag(CoefficientDrag, y, V, Area)
+    lift = Lift(CoefficientLift, y, V, Area)
+
 
 
 # Integration interval
 t = 0.0                     # initial time, sec
+tburn = 0.0
+
 dt = 0.01                   # time step, sec
 y0 = [V, theta, x, y]       # initial conditions
 weight = m_total * g
-
-
 
 # Arrays to store results
 t_arr = [0.0]
@@ -184,78 +159,97 @@ lift_arr = [lift / 1000]
 drag_arr = [drag / 1000]
 weight_arr = [weight / 1000]
 
+phase_1 = True
+phase_2 = False
+# phase_3 = False
+# phase_4 = False
+engine_activation_time = 10.0  # Time duration for engine activation
+
 while y > 0.0:
-
-    # if V < 2 * 340.0:
-    #     I_sp = 12.0
-    # elif V > 3 * 340.0 or V < 4 * 340.0:
-    #     I_sp = 20.0
-    # elif V > 4 * 340.0 or V < 5 * 340.0:
-    #     I_sp = 15.0
-    # elif V > 5 * 340.0:
-    #     I_sp = 10.0
-
 
     if is_ballistic_trajectory:
         alpha = np.radians(0)
         is_Engine = True
+
+    elif is_ricocheting_trajectory:
+        if t < 5.0 and phase_1:
+            alpha = np.radians(0)
+            is_Engine = True
+        else:
+            phase_1 = False
+            phase_2 = True
+
+        if phase_2:
+            if lift >= weight:
+                alpha = np.radians(6.6)
+                is_Engine = True
+            else:
+                alpha = np.radians(0)  # Adjust the angle of attack as needed
+                is_Engine = True
+                engine_activation_time -=dt
+                if engine_activation_time <= 0.1:
+                    is_Engine = False
+
 
     elif is_planning_trajectory:
         # набирает высоту => переходит к горизонтальному полету с исопльзованием lift,
         # alpha определяется изсходя из требования равенства нулю проекций действующих сил,
         # включая силу тяги двигаетля на вертикальную ось
 
-        if t < 5.0:
+        if y < 10000:
             is_Engine = True
         else:
             is_Engine = False
 
-        if lift - weight < 0.1:
+        while lift != weight:
+            alpha = np.radians(6.6)
+        else:
+
+        if lift > weight:
             is_Engine = False
             if lift - weight < 0.0:
                 alpha = np.radians(2)
             elif lift - weight > 1.0:
-                alpha = np.radians(10)
+                alpha = np.radians(8)
             else:
                 alpha = np.radians(2)
-
-        if abs(V) < 3 * 340 or V - drag < 0.0:
-            is_Engine = True
-
-
-    elif is_ricocheting_trajectory:
-        # При снижении ЛА с углом атаки alpha !=0 за счет возрастающего влияния аэродинамической подъемной силы
-        # возникает эффект рикошетирования ,когда высота полета может начать увеличиваться.
-        # И снова в момент набора высоты включить ненадолго двигатель и тогда получим несколько циклов рикошетирования
-        if theta < np.radians(19):
-            is_Engine = True
-            alpha = np.radians(6)
         else:
-            is_Engine = False
+            is_Engine = True
+
+        # if abs(V) < 3 * 340 or V - drag < 0.0:
+        #     is_Engine = True
+
 
     # Engine
-    if m_fuel > 0 and is_Engine == True:
-        # alpha = np.radians(6)
-        m_fuel = mass_after_fuel_burning(t, m_fuel)
+    if m_fuel > 0 and is_Engine == True and y < 45000.0:
+        m_fuel = mass_after_fuel_burning(tburn, m_fuel)
         m_total = m_ha + m_fuel
+
+        if V < 8 * 340.0:
+            I_sp = 15.0
+        elif V > 8 * 340.0:
+            I_sp = 10.0
+
         T = thrust(m_fuel, g, I_sp)
-    else:
+        tburn += dt
+    elif is_Engine == False and m_fuel > 0:
         m_total = m_ha + m_fuel
         T = 0
+    else:
+        m_total = m_ha
+        T = 0
+
+    weight = m_total * g
 
     sol = odeint(hypersonic_aircraft_model, y0, [t, t + dt], args=(R_earth, g, T, alpha, m_total, drag, lift))
 
-    if is_ballistic_trajectory:
+    if is_ballistic_trajectory or is_planning_trajectory or is_ricocheting_trajectory:
         drag = Drag(CoefficientDrag, y, V, Area)
-        lift = 0
-    elif is_planning_trajectory:
-        drag = Drag(CoefficientDrag, y, V, Area)
-        lift = Lift(CoefficientLift, y, V, Area)
-    elif is_ricocheting_trajectory:
-        drag = Drag(CoefficientDrag, y, V, Area)
-        lift = Lift(CoefficientLift, y, V, Area)
+        if is_ballistic_trajectory:
+            lift = 0
+        else:
+            lift = Lift(CoefficientLift, y, V, Area)
 
-    weight = m_total * g
     # Update y0
     y0 = sol[-1]
     V, theta, x, y = sol[-1]
@@ -278,6 +272,7 @@ while y > 0.0:
     weight_arr.append(weight / 1000)
 
 
+print(tburn)
 # region Output plots
 sns.set_style("whitegrid")
 fig, (hx, thetaXalpha) = plt.subplots(nrows=2, ncols = 1, figsize=(12, 12), height_ratios=[3,2])
@@ -294,17 +289,9 @@ plt.scatter(x=x_arr, y=alpha_arr, s=1, color='#f12e6d', label='Альфа')
 thetaXalpha.legend(loc='lower right')
 
 hx.set(ylabel='Высота, км. // Сила тяги и споротивления, кН',
-       xlabel='Дальность, км.',
-       yticks=np.linspace(np.min([np.min(y_arr), np.min(lift_arr), np.min(drag_arr)]),
-                          np.max([np.max(y_arr), np.max(lift_arr), np.max(drag_arr)]),
-                          12),
-       xticks=np.linspace(np.min(x_arr), np.max(x_arr), 10))
+       xlabel='Дальность, км.')
 thetaXalpha.set(xlabel='Дальность, км.',
-                ylabel='Угол Тета и Угол Альфа, град.',
-                yticks=np.linspace(np.min([np.min(theta_arr), np.min(alpha_arr)]),
-                                   np.max([np.max(theta_arr), np.max(alpha_arr)]),
-                                   12),
-                xticks=np.linspace(np.min(x_arr), np.max(x_arr), 10))
+                ylabel='Угол Тета и Угол Альфа, град.')
 
 thetaXalpha.invert_yaxis()
 
@@ -329,9 +316,7 @@ ax2.set_title('График зависимости скорости ЛА от в
 sns.lineplot(x=t_arr, y=m_arr, ax=ax3, color='black', linewidth=1)
 ax3.set(xlabel = 'Время, сек.',
         ylabel = 'Масса ЛА, кг.',
-        title = 'График зависимости массы ЛА от времени',
-        xticks = np.linspace(np.min(t_arr), np.max(t_arr), 10),
-        yticks = np.linspace(np.min(m_arr), np.max(m_arr), 4))
+        title = 'График зависимости массы ЛА от времени')
 
 # Plot 4: Theta versus Time
 sns.scatterplot(x=t_arr, y=thrust_arr, ax=ax4, s=1, color='black')
