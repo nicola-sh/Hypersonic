@@ -92,9 +92,9 @@ m_fuel = 450.0              # mass fuel of aircraft, kg
 m_ha = 1440.0 - m_fuel      # mass of aircraft, kg
 m_total = m_ha + m_fuel     # total mass of aircraft, kg
 x = 0.0                     # Distance, m
-y = 2 * 1000.0              # altitude, m
-Mach = 3.0                  # Mach number, m/s
-V = Mach * 340.0            # velocity, m/s
+y = 6 * 1000.0              # altitude, m
+V = 3 * 340.0                       # velocity, m/s
+Mach = V / 340.0                    # Mach number, m/s
 alpha = np.radians(0)       # angle of attack, radians
 theta = np.radians(0)       # angle of inclination of the flight trajectory, radians
 psi = np.radians(0)         # pitch angle, radians
@@ -102,21 +102,24 @@ psi = np.radians(0)         # pitch angle, radians
 G_c = 0.0015                # fuel burnout rate per dt 0.0012
 I_sp = 10.0                 # specific impulse, sec ~1500-2000 sec for scramjet
 
-length = 12.5                               # length of the HA, m
-diameter = 0.5                              # diameter of the HA, m
-radius = diameter / 2                       # radius of the HA, m
-Area = np.pi * radius**2             # frontal area of the HA, m^2
-totalArea = 2 * np.pi * radius * length     # lower area of the HA, m^2
+length = 12.5                       # length of the HA, m
+diameter = 0.5                      # diameter of the HA, m
+radius = diameter / 2               # radius of the HA, m
+Area = np.pi * radius**2      # nozzle area of the ramjet, m^2
+AreaInlet = 0.54 * Area       # inlet area of the ramjet, m^2
 
 CoefficientDrag = .4        # drag coefficient for cone 20 degrees
-CoefficientLift = .5        # lift coefficient for cone 20 degrees
-
+CoefficientLift = .9        # lift coefficient for cone 20 degrees
 lift = 0.0
 drag = 0.0
+phiF = 1.0
+co2 = 0.21
+fSt = 0.125
+
 is_Engine = True
 is_ballistic_trajectory = False
-is_ricocheting_trajectory = False
-is_planning_trajectory = True
+is_ricocheting_trajectory = True
+is_planning_trajectory = False
 
 
 if is_ballistic_trajectory:
@@ -126,12 +129,12 @@ if is_ballistic_trajectory:
     lift = 0
 elif is_ricocheting_trajectory:
     alpha = np.radians(0)
-    theta = np.radians(43)
+    theta = np.radians(32)
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = Lift(CoefficientLift, y, V, Area)
 elif is_planning_trajectory:
     alpha = np.radians(0)
-    theta = np.radians(43)
+    theta = np.radians(32)
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = Lift(CoefficientLift, y, V, Area)
 
@@ -165,74 +168,109 @@ phase_2 = False
 # phase_4 = False
 engine_activation_time = 10.0  # Time duration for engine activation
 
+fContol = 1.0
+
 while y > 0.0:
 
     if is_ballistic_trajectory:
         alpha = np.radians(0)
         is_Engine = True
-
     elif is_ricocheting_trajectory:
-        if t < 5.0 and phase_1:
-            alpha = np.radians(0)
+        if t < 10.0 and phase_1 and y < 30000:
             is_Engine = True
+            fContol = 0.5
         else:
             phase_1 = False
             phase_2 = True
 
-        if phase_2:
-            if lift >= weight:
+        if phase_2 and theta < np.radians(0):
+                alpha = np.radians(6)
+                is_Engine = True
+                fContol = 0.5
+        elif lift - weight < 0:
+            alpha = np.radians(6)
+            is_Engine = True
+            fContol = 0.5
+        elif lift - weight > 0:
+            alpha = np.radians(2)
+            is_Engine = False
+        # if t < 5.0 and phase_1:
+        #     alpha = np.radians(0)
+        #     is_Engine = True
+        # else:
+        #     phase_1 = False
+        #     phase_2 = True
+        #
+        # if phase_2:
+        #     if lift >= weight:
+        #         alpha = np.radians(6.6)
+        #         is_Engine = True
+        #     else:
+        #         alpha = np.radians(0)  # Adjust the angle of attack as needed
+        #         is_Engine = True
+        #         engine_activation_time -=dt
+        #         if engine_activation_time <= 0.1:
+        #             is_Engine = False
+    elif is_planning_trajectory:
+
+        if t < 30.0 and phase_1:
+            is_Engine = True
+        else:
+            is_Engine = False
+            phase_2 = True
+            phase_1 = False
+
+        if np.radians(-3) < theta < np.radians(0) and phase_2:
+            if lift - weight < -1:
                 alpha = np.radians(6.6)
                 is_Engine = True
-            else:
-                alpha = np.radians(0)  # Adjust the angle of attack as needed
-                is_Engine = True
-                engine_activation_time -=dt
-                if engine_activation_time <= 0.1:
+            elif lift - weight > 1:
+                if drag - V > 0.0:
+                    is_Engine = True
+                    alpha = np.radians(6)
+                else:
                     is_Engine = False
 
 
-    elif is_planning_trajectory:
-        # набирает высоту => переходит к горизонтальному полету с исопльзованием lift,
-        # alpha определяется изсходя из требования равенства нулю проекций действующих сил,
-        # включая силу тяги двигаетля на вертикальную ось
 
-        if y < 10000:
-            is_Engine = True
-        else:
-            is_Engine = False
-
-        while lift != weight:
-            alpha = np.radians(6.6)
-        else:
-
-        if lift > weight:
-            is_Engine = False
-            if lift - weight < 0.0:
-                alpha = np.radians(2)
-            elif lift - weight > 1.0:
-                alpha = np.radians(8)
-            else:
-                alpha = np.radians(2)
-        else:
-            is_Engine = True
-
-        # if abs(V) < 3 * 340 or V - drag < 0.0:
+        # if y < 10000:
         #     is_Engine = True
-
+        # else:
+        #     is_Engine = False
+        #
+        # while lift != weight:
+        #     alpha = np.radians(6.6)
+        # else:
+        #
+        # if lift > weight:
+        #     is_Engine = False
+        #     if lift - weight < 0.0:
+        #         alpha = np.radians(2)
+        #     elif lift - weight > 1.0:
+        #         alpha = np.radians(8)
+        #     else:
+        #         alpha = np.radians(2)
+        # else:
+        #     is_Engine = True
+        #
+        # # if abs(V) < 3 * 340 or V - drag < 0.0:
+        # #     is_Engine = True
 
     # Engine
-    if m_fuel > 0 and is_Engine == True and y < 45000.0:
-        m_fuel = mass_after_fuel_burning(tburn, m_fuel)
+    if m_fuel > 0 and is_Engine == True and y < 40000.0:
+        m_fuel = mass_after_fuel_burning(tburn, m_fuel) * fContol
         m_total = m_ha + m_fuel
 
-        if V < 8 * 340.0:
-            I_sp = 15.0
-        elif V > 8 * 340.0:
-            I_sp = 10.0
+        mDotAir = density(y) * V * AreaInlet
 
-        T = thrust(m_fuel, g, I_sp)
+        if V < 3 * 340.0 or V < 8 * 340.0:
+            I_sp = 150.0
+        elif V > 8 * 340.0:
+            I_sp = 100.0
+
+        T = thrust(mDotAir, g, I_sp) * fContol
         tburn += dt
-    elif is_Engine == False and m_fuel > 0:
+    elif m_fuel > 0 and is_Engine == False:
         m_total = m_ha + m_fuel
         T = 0
     else:
@@ -273,6 +311,8 @@ while y > 0.0:
 
 
 print(tburn)
+print(x / 1000)
+print(m_total)
 # region Output plots
 sns.set_style("whitegrid")
 fig, (hx, thetaXalpha) = plt.subplots(nrows=2, ncols = 1, figsize=(12, 12), height_ratios=[3,2])
