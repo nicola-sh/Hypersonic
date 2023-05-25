@@ -118,8 +118,8 @@ fSt = 0.125
 
 is_Engine = True
 is_ballistic_trajectory = False
-is_ricocheting_trajectory = False
-is_planning_trajectory = True
+is_ricocheting_trajectory = True
+is_planning_trajectory = False
 
 
 if is_ballistic_trajectory:
@@ -129,7 +129,7 @@ if is_ballistic_trajectory:
     lift = 0
 elif is_ricocheting_trajectory:
     alpha = np.radians(0)
-    theta = np.radians(32)
+    theta = np.radians(22)
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = Lift(CoefficientLift, y, V, Area)
 elif is_planning_trajectory:
@@ -216,10 +216,10 @@ while y > 0.0:
                 continue
 
 
-        if phase_2:
-            if weight - lift * np.cos(theta) > drag * np.sin(theta):
-                alpha = 0.0
-            if drag * np.cos(theta) - lift
+        # if phase_2:
+        #     if weight - lift * np.cos(theta) > drag * np.sin(theta):
+        #         alpha = 0.0
+        #     if drag * np.cos(theta) - lift
 
 
 
