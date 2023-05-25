@@ -69,8 +69,8 @@ def mass_after_fuel_burning(t, m_fuel):
     except spi.IntegrationWarning:
         return 0.0
 
-def thrust(m_fuel, g, I_sp):
-    return m_fuel * g * I_sp # kg * (m/sec**2) * sec
+def thrust(mdotAir, g, I_sp):
+    return mdotAir * g * I_sp
 
 def hypersonic_aircraft_model(y, t, R_earth, g, T, alpha, m_total, drag, lift):
     V, theta, x, y = y
@@ -118,13 +118,25 @@ fSt = 0.125
 
 is_Engine = True
 is_ballistic_trajectory = False
-is_ricocheting_trajectory = True
-is_planning_trajectory = False
+is_ricocheting_trajectory = False
+is_planning_trajectory = True
 
 
 if is_ballistic_trajectory:
     alpha = np.radians(0)
-    theta = np.radians(29.7)
+    theta = np.radians(31.1)
+    # 47.0 221.72060542438828
+    # 31.2 233.90514598000937
+        # 31.1 233.91043392819978
+    # 31.0 233.90285580843752
+    # 30.9 233.90651803451732
+    # 30.7 233.8978616024907
+    # 30.5 233.8930158290151
+    # 29.5 233.7890852801865
+    # 29.0 233.70187042378907
+            # 29.9 233.84536810656724
+            # 25.9 232.7268718395204
+
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = 0
 elif is_ricocheting_trajectory:
@@ -134,7 +146,7 @@ elif is_ricocheting_trajectory:
     lift = Lift(CoefficientLift, y, V, Area)
 elif is_planning_trajectory:
     alpha = np.radians(0)
-    theta = np.radians(32)
+    theta = np.radians(24.7)
     drag = Drag(CoefficientDrag, y, V, Area)
     lift = Lift(CoefficientLift, y, V, Area)
 
@@ -162,12 +174,14 @@ lift_arr = [lift / 1000]
 drag_arr = [drag / 1000]
 weight_arr = [weight / 1000]
 
-phase_1 = True
-phase_2 = False
-# phase_3 = False
-engine_activation_time = 10.0  # Time duration for engine activation
 
+engine_activation_time = 5.0  # Time duration for engine activation
 fContol = 1.0
+midHeight = 0.0
+start = True
+startEngine = False
+phase_2 = False
+phase_3 = False
 
 while y > 0.0:
 
@@ -175,70 +189,98 @@ while y > 0.0:
         alpha = np.radians(0)
         is_Engine = True
     elif is_ricocheting_trajectory:
-        if t < 30.0 and phase_1 and y < 30000.0:
-            is_Engine = True
-        else:
-            is_Engine = False
-            phase_2 = True
-            phase_1 = False
+
+        if start:
+            if t < 30.0:
+                is_Engine = True
+            else:
+                is_Engine = False
+                start = False
+                continue
+
+        if theta < np.radians(-20):
+            alpha = np.radians(6.6)
+            if lift > drag:
+                startEngine = True
+            else:
+                startEngine = False
+        elif theta > np.radians(1):
+            alpha = np.radians(0)
+
+        if startEngine:
+            if engine_activation_time > 0.01:
+                is_Engine = True
+                engine_activation_time -= dt
+            else:
+                startEngine = False
+                is_Engine = False
+                engine_activation_time = 5.0
+    elif is_planning_trajectory:
+
+        if start:
+            if t < 15.0:
+                is_Engine = True
+            else:
+                is_Engine = False
+                start = False
+                continue
 
 
-        if lift == weight and phase_2:
+        if lift - weight != 0:
             alpha = np.radians(6.6)
             is_Engine = True
         else:
+            alpha = np.radians(0)
             is_Engine = False
-            phase_2 = True
 
-        # if phase_2 and theta < np.radians(-30):
-        #     alpha = np.radians(6)
+        # if T - drag != 0:
         #     is_Engine = True
-        # elif lift < weight:
-        #     alpha = np.radians(6)
-        #     is_Engine = True
-        # elif lift > weight:
-        #     alpha = np.radians(2)
+        # else:
         #     is_Engine = False
 
-    elif is_planning_trajectory:
+        # if y < midHeight and theta < np.radians(-20):
+        #     if lift < weight:
+        #         alpha = np.radians(6.6)
+        #         startEngine = True
+        #     elif lift > weight:
+        #         alpha = np.radians(5)
+        #         startEngine = False
+        #     else:
+        #         startEngine = False
 
-        if t < 30.0 and phase_1:
-            is_Engine = True
-        else:
-            is_Engine = False
-            phase_2 = True
-            phase_1 = False
 
-        if np.radians(-3) < theta < np.radians(0) and phase_2:
-            if lift - weight < -1:
-                alpha = np.radians(6.6)
-                is_Engine = True
-            elif lift - weight > 1:
-                if drag - V > 0.0:
-                    is_Engine = True
-                    alpha = np.radians(6)
-                else:
-                    is_Engine = False
+        # if startEngine:
+        #     if engine_activation_time > 0.01:
+        #         is_Engine = True
+        #         engine_activation_time -= dt
+        #     else:
+        #         startEngine = False
+        #         is_Engine = False
+        #         engine_activation_time = 5.0
+
+
 
     # Engine
-    if m_fuel > 0.0 and is_Engine and y < 40000.0:
+    if m_fuel > 1.0 and is_Engine and y < 40000.0:
         m_fuel = mass_after_fuel_burning(tburn, m_fuel)
         m_total = m_ha + m_fuel
 
         mDotAir = density(y) * V * AreaInlet
+        mDotFuel = phiF * co2 * fSt * mDotAir
 
-        if V < 3 * 340.0 or V < 8 * 340.0:
-            I_sp = 150.0
-        elif V > 8 * 340.0:
-            I_sp = 100.0
+        if V < 4 * 340.0:
+            I_sp = 5000.0
+        elif 4 * 340.0 < V < 5 * 340.0:
+            I_sp = 4500.0
+        elif 5 * 340.0 < V < 6 * 340.0:
+            I_sp = 4000.0
+        else:
+            I_sp = 2500.0
 
-        T = thrust(mDotAir, g, I_sp)
+        T = thrust(mDotFuel, g, I_sp)
         tburn += dt
     elif m_fuel > 0.0 and not is_Engine:
         m_total = m_ha + m_fuel
-        T = 0.0
-    else:
-        m_total = m_ha
         T = 0.0
 
     weight = m_total * g
@@ -283,9 +325,9 @@ fig, (hx, thetaXalpha) = plt.subplots(nrows=2, ncols = 1, figsize=(12, 12), heig
 plt.subplots_adjust(hspace=0.3)
 
 sns.lineplot(x=x_arr, y=y_arr, color='black', linewidth=3, ax=hx, label='Дальность полета')
-sns.lineplot(x=x_arr, y=lift_arr, color='#512DA8', alpha =0.3, linewidth=2, ax=hx, label='Подъемная сила')
-sns.lineplot(x=x_arr, y=drag_arr, color='#f12e6d', alpha =0.3, linewidth=2, ax=hx, label='Сила сопротивление')
-sns.lineplot(x=x_arr, y=weight_arr, color='green', alpha =0.3, linewidth=2, ax=hx, label='Сила тяжести')
+# sns.lineplot(x=x_arr, y=lift_arr, color='#512DA8', alpha =0.3, linewidth=2, ax=hx, label='Подъемная сила')
+# sns.lineplot(x=x_arr, y=drag_arr, color='#f12e6d', alpha =0.3, linewidth=2, ax=hx, label='Сила сопротивление')
+# sns.lineplot(x=x_arr, y=weight_arr, color='green', alpha =0.3, linewidth=2, ax=hx, label='Сила тяжести')
 hx.legend(loc='upper right')
 
 plt.scatter(x=x_arr, y=theta_arr, s=1, color='#512DA8', label='Тета')
