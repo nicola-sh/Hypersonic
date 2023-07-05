@@ -1,1 +1,0 @@
-drop table IF EXISTS b_ipol_dpd_order;
