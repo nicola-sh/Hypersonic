@@ -3,37 +3,29 @@ import pandas as pd
 import plotly.graph_objects as go
 from isa import density
 
-# region data
-# Constants
-pi = 3.141592653589793
-g = 9.81  # acceleration due to gravity
-Radius = 6371000  # radius of the Earth
-a = 331  # speed of sound
-R = 8.31446261815324  # gas law constant
-atm = 101325
+# region Константы и параметры ЛА
+# Константы
+g = 9.8                 # Ускорение свободного падения, м/с²
+Radius = 6371000        # Радиус Земли, м
+a = 331                 # Скорость звука, м/с
+pi = 3.141592653589793  # Число Пи
 
-# Aircraft parameters
-length = 12.5  # length HA,m
-diameter = 0.5  # diameter HA,m
-radius = diameter / 2  # radius HA,m
+# Параметры ЛА
+length = 12.5           # Длина ЛА, м
+diameter = 0.5          # Диаметр ЛА, м
+radius = diameter / 2   # Радиус ЛА, м
 
-# Initial parameters
-Ae = pi * radius ** 2  # Выходное сечение
-Am = Ae  # Сечение миделя ракеты
-Akr = 0.47 * Ae
-A0 = 0.54 * Ae  # Сечение воздухозаборник
-Afin = 0.2  # Площадь крыльев
+Ae = pi * radius ** 2   # Выходное сечение ЛА, м²
+Am = Ae                 # Сечение миделя ЛА, м²
+A0 = 0.54 * Ae          # Сечение воздухозаборника ЛА, м²
+Afin = 0.2              # Площадь крыльев ЛА, м²
 
-# print("Inlet area: " + str(A0) + " m^2")
-# print("Midsection area: " + str(Am) + " m^2")
-# print("Critical area: " + str(Akr) + " m^2")
-# print("Exit area: " + str(Ae) + " m^2")
+mha = 990               # Масса только ЛА, кг
+mf = 450                # Начальная масса топлива, кг
 
-# Mass parameters
-mf = 450  # initial fuel mass, kg
-mha = 990  # mass of aircraft, kg
-
-
+# print("Сечение воздухозаборника ЛА: " + str(A0) + " м²")
+# print("Сечение миделя ЛА: " + str(Am) + " м²")
+# print("Выходное сечение ЛА: " + str(Ae) + " м²")
 # endregion data
 
 
@@ -68,8 +60,8 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         return density(altitude) * A0 * v
 
     def fuel_mass_flow_rate(altitude, v):
-        # fuel_ratio = 3.5 # Стехеометрический коэффицнет для керосин/кислород
-        fuel_ratio = 14.7  # Стехеометрический коэффицнет для керосин/воздух
+        # fuel_ratio = 3.5      # Стехеометрический коэффициент для керосин/кислород
+        fuel_ratio = 14.7       # Стехеометрический коэффициент для керосин/воздух
 
         mf = air_mass_flow_rate(altitude, v) / fuel_ratio
 
@@ -80,9 +72,9 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
 
     def thrust(altitude, v, m, engine):
 
-        thrust_ref = 140000  # Сила тяги, Н
-        # g_fuel_ref = 5.05      # Расход топлива, кг/с   1кг/с = 30кН
-        g_fuel_ref = 10.05  # Расход топлива, кг/с   1кг/с = 30кН
+        thrust_ref = 140000         # Сила тяги, Н
+        # g_fuel_ref = 5.05         # Расход топлива, кг/с   1кг/с = 30кН
+        g_fuel_ref = 10.05          # Расход топлива, кг/с   1кг/с = 60кН
 
         mach_ratio = (v / a) / 7
 
@@ -92,12 +84,6 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
             thrust = 0
 
         return thrust
-
-    def specific_impulse(y, v, m, engine):
-        T = thrust(y, v, m, engine)
-        g_fuel = fuel_mass_flow_rate(y, v)
-
-        return T / g_fuel if T > 0 and g_fuel > 0 else 0
 
     def drag(altitude, v):
         if ballistic:
@@ -113,9 +99,13 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
             lift_coefficient = 0.3
         return .5 * Afin * lift_coefficient * density(altitude) * v ** 2
 
-    # Function to calculate the derivatives using the Runge-Kutta method
-    def calculate_derivatives(t, x, y, v, theta, m, engine, alpha):
+    def specific_impulse(y, v, m, engine):
+        T = thrust(y, v, m, engine)
+        g_fuel = fuel_mass_flow_rate(y, v)
 
+        return T / g_fuel if T > 0 and g_fuel > 0 else 0
+
+    def calculate_derivatives(t, x, y, v, theta, m, engine, alpha):
         P = thrust(y, v, m, engine)
         Drag = drag(y, v)
         Lift = lift(y, v)
@@ -130,40 +120,29 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
 
         return dxdt, dydt, dvdt, dthetadt, dmdt
 
-    # Function to perform one step of the Runge-Kutta method
     def runge_kutta_step(t, dt, x, y, v, theta, m, engine, alpha):
-        k1_x, k1_y, k1_v, k1_theta, k1_m = calculate_derivatives(t,
-                                                                 x,
-                                                                 y,
-                                                                 v,
-                                                                 theta,
-                                                                 m,
-                                                                 engine,
-                                                                 alpha)
+        k1_x, k1_y, k1_v, k1_theta, k1_m = calculate_derivatives(t, x, y, v, theta, m, engine, alpha)
         k2_x, k2_y, k2_v, k2_theta, k2_m = calculate_derivatives(t + dt / 2,
                                                                  x + k1_x * dt / 2,
                                                                  y + k1_y * dt / 2,
                                                                  v + k1_v * dt / 2,
                                                                  theta + k1_theta * dt / 2,
                                                                  m + k1_m * dt / 2,
-                                                                 engine,
-                                                                 alpha)
+                                                                 engine, alpha)
         k3_x, k3_y, k3_v, k3_theta, k3_m = calculate_derivatives(t + dt / 2,
                                                                  x + k2_x * dt / 2,
                                                                  y + k2_y * dt / 2,
                                                                  v + k2_v * dt / 2,
                                                                  theta + k2_theta * dt / 2,
                                                                  m + k2_m * dt / 2,
-                                                                 engine,
-                                                                 alpha)
+                                                                 engine, alpha)
         k4_x, k4_y, k4_v, k4_theta, k4_m = calculate_derivatives(t + dt,
                                                                  x + k3_x * dt,
                                                                  y + k3_y * dt,
                                                                  v + k3_v * dt,
                                                                  theta + k3_theta * dt,
                                                                  m + k3_m * dt,
-                                                                 engine,
-                                                                 alpha)
+                                                                 engine, alpha)
 
         x = x + dt * (k1_x + 2 * k2_x + 2 * k3_x + k4_x) / 6
         y = y + dt * (k1_y + 2 * k2_y + 2 * k3_y + k4_y) / 6
@@ -179,14 +158,15 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
 
     while y > 0 and t < t_end:
 
+        #region Расчет других параметров
         weight = m * g
-
         acceleration = thrust(y, v, m, engine) / m
 
         # nxa = (thrust(y, v, m, engine) - drag(y, v)) / m * g
         # nya = (thrust(y, v, m, engine) + lift(y, v)) / m * g
         #
         # costheta = np.cos(theta)
+        #endregion Расчет других параметров
 
         if ballistic:
             if t < 100:
@@ -210,7 +190,7 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
 
         x, y, v, theta, m = runge_kutta_step(t, dt, x, y, v, theta, m, engine, alpha)
 
-        # Append the current x and y values to the trajectory arrays
+        #region Добавляем данные каждой итерации в массив data
         data["x"].append(x)
         data["y"].append(y)
         data["v"].append(v)
@@ -219,30 +199,27 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         data["m"].append(m)
         data["weight"].append(weight)
         data["acceleration"].append(acceleration)
-
         data["Thrust"].append(thrust(y, v, m, engine))
         data["Drag"].append(drag(y, v))
         data["Lift"].append(lift(y, v))
-
         # data["nxa"].append(nxa)
         # data["nya"].append(nya)
         # data["costheta"].append(costheta)
-
         data["specificImpulse"].append(specific_impulse(y, v, m, engine))
         data["air_mass_flow_rate"].append(air_mass_flow_rate(y, v))
         data["fuel_mass_flow_rate"].append(fuel_mass_flow_rate(y, v))
         data["t"].append(t)
+        #endregion
 
-        t += dt  # Update the time
+        t += dt  # Обновляем время
 
     last_x = data["x"][-1]
-    print("Последнее значение x:", last_x)
+    print("Максимальная дальность данной симуляции:", last_x)
 
     return data
 
 
 def plot_flight_data(data):
-    # Создание графика
     fig = go.Figure()
 
     # Определение параметров для добавления на график
@@ -295,7 +272,6 @@ def plot_flight_data(data):
     fig.show()
 
 
-# Генерация значений углов тета и альфа
 thetas = np.radians(np.arange(0, 55, 5))  # Угол тета от 30 до 55 градусов с шагом 5 градусов
 alphas = np.radians(np.arange(0, 1, 1))  # Угол альфа от -5 до 5 градусов с шагом 5 градусов
 max_x = float('-inf')
@@ -311,15 +287,12 @@ for theta in thetas:
 
         if last_x > max_x:
             max_x = last_x
-            best_simulation = simulation_data
+            best_simulation = simulation_data #содержит информацию о симуляции с самой дальней траектории
 
 # Создание DataFrame из списка данных всех симуляций
 df = pd.DataFrame(all_simulations_data)
-
-# Вывод таблицы данных
 print(df)
 
-# best_simulation содержит информацию о симуляции с наибольшим значением x
 plot_flight_data(best_simulation)  # Построение графика для лучшей симуляции
 
 # ballistic = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(47), np.radians(0), False, True, False, False)

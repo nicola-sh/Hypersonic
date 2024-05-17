@@ -1,21 +1,6 @@
-''' ------------------------------------------------------------------
-This module defines the Standard Atmosphere.
-
-The function `get_parameters` takes the input altitude in [km]
-and computes temperature, pressure and density at that altitude.
-
-Data was taken from:
-
-https://en.wikipedia.org/wiki/Standard_sea_level
-https://en.wikipedia.org/wiki/Standard_gravity
-https://en.wikipedia.org/wiki/Gas_constant
-https://en.wikipedia.org/wiki/International_Standard_Atmosphere
------------------------------------------------------------------- '''
-
 import numpy as np
-import plotly.graph_objects as go
 
-# Standard sea level pressure, temperature and air density:
+# Стандартные данные воздуха на уровне моря
 T0 = 288.15     # [K]
 p0 = 101325.0   # [Pa]
 rho0 = 1.225    # [kg/m3]
@@ -27,22 +12,22 @@ g = 9.80665     # [kg*m/s2]
 R = 287.058     # [J/(kg*K)]
 
 # Lapse rates and atmospheric zones altitudes:
-# TROPOSPHERE .......................................... (0-10.999)km
+# Тропосфера .......................................... (0-10.999)km
 h_ts = 0        # [m]
 a_ts = -0.0065  # [K/m]
-# TROPOPAUSE ========================================== (11-19.999)km
+# Тропопауза ========================================== (11-19.999)km
 h_tp = 11000    # [m]
 a_tp = 0        # [K/m] (isothermal)
-# STRATOSPHERE ........................................ (20-31.999)km
+# Стратосфера ........................................ (20-31.999)km
 h_ss1 = 20000   # [m]
 a_ss1 = 0.001   # [K/m]
 # ..................................................... (32-46.999)km
 h_ss2 = 32000   # [m]
 a_ss2 = 0.0028  # [K/m]
-# STRATOPAUSE ========================================= (47-50.999)km
+# Стратопауза ========================================= (47-50.999)km
 h_sp = 47000    # [m]
 a_sp = 0        # [K/m] (isothermal)
-# MESOSPHERE .......................................... (51-70.999)km
+# Мезосфера .......................................... (51-70.999)km
 h_ms1 = 51000   # [m]
 a_ms1 = -0.0028 # [K/m]
 # ......................................................... (71-85)km
