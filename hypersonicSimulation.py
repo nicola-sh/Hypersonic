@@ -23,6 +23,7 @@ Afin = 0.2              # Площадь крыльев ЛА, м²
 mha = 990               # Масса только ЛА, кг
 mf = 450                # Начальная масса топлива, кг
 
+# print(density(2000))
 # print("Сечение воздухозаборника ЛА: " + str(A0) + " м²")
 # print("Сечение миделя ЛА: " + str(Am) + " м²")
 # print("Выходное сечение ЛА: " + str(Ae) + " м²")
@@ -65,31 +66,28 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
 
         mf = air_mass_flow_rate(altitude, v) / fuel_ratio
 
-        if mf > 3:
-            mf = 3
+        if mf > 2.2:
+            mf = 2.2
 
         return mf
 
     def thrust(altitude, v, m, engine):
-
-        thrust_ref = 140000         # Сила тяги, Н
-        # g_fuel_ref = 5.05         # Расход топлива, кг/с   1кг/с = 30кН
-        g_fuel_ref = 10.05          # Расход топлива, кг/с   1кг/с = 60кН
-
-        mach_ratio = (v / a) / 7
-
-        if m > mha and engine and v > 2.5 * a and altitude < 99000:
-            thrust = ((fuel_mass_flow_rate(altitude, v) * thrust_ref) / g_fuel_ref) * mach_ratio
+        thrust_ref = 40000              # Сила тяги, Н
+        mach_ratio = (v / a) / 12
+        if m > mha and engine and v > 2.5 * a:
+            thrust = (fuel_mass_flow_rate(altitude, v) * thrust_ref) * mach_ratio
         else:
             thrust = 0
 
         return thrust
 
     def drag(altitude, v):
-        if ballistic:
-            drag_coefficient = 0
-        else:
-            drag_coefficient = 0.3
+        # if ballistic:
+        #     drag_coefficient = 0
+        # else:
+        #     drag_coefficient = 0.3
+        drag_coefficient = 0.3
+
         return .5 * A0 * drag_coefficient * density(altitude) * v ** 2
 
     def lift(altitude, v):
@@ -169,19 +167,18 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         #endregion Расчет других параметров
 
         if ballistic:
-            if t < 100:
-                engine = True
-            else:
-                engine = False
+            engine = True
+        else:
+            engine = False
 
-        if glide:
-            if 0.3 < t < 50:
-                engine = True
-            elif 170 < t and theta < 0:
-                alpha = np.deg2rad(2)
-                engine = True
-            else:
-                engine = False
+        # if glide:
+        #     if 0.3 < t < 50:
+        #         engine = True
+        #     elif 80 < t and theta < 0:
+        #         alpha = np.deg2rad(6.1)
+        #         engine = True
+        #     else:
+        #         engine = False
 
         # if weight - drag(y, v) <= 0 and t > 50 and y < 25000:
         #     engine = True
@@ -228,8 +225,8 @@ def plot_flight_data(data):
         ("t", "y", "Положение ЛА по оси Y, м от времени"),
         ("t", "v", "Скорость ЛА, м/с от времени"),
         ("t", "m", "Масса ЛА, кг от времени"),
-        ("t", "weight", "Ускорение, м/с² от времени"),
-        ("t", "acceleration", "Вес ЛА, Н от времени"),
+        ("t", "weight", "Вес ЛА, Н от времени"),
+        ("t", "acceleration", "Ускорение, м/с² от времени"),
         ("t", "theta", "Угол наклона траектории, градус от времени"),
         ("t", "alpha", "Угол атаки, градус от времени"),
         ("t", "Thrust", "Сила тяги, Н от времени"),
@@ -272,22 +269,24 @@ def plot_flight_data(data):
     fig.show()
 
 
-thetas = np.radians(np.arange(0, 55, 5))  # Угол тета от 30 до 55 градусов с шагом 5 градусов
-alphas = np.radians(np.arange(0, 1, 1))  # Угол альфа от -5 до 5 градусов с шагом 5 градусов
+thetas = np.radians(np.arange(0, 48, 1))  # Угол тета от 30 до 55 градусов с шагом 5 градусов
+alphas = np.radians(np.arange(0, 6, 1))  # Угол альфа от -5 до 5 градусов с шагом 5 градусов
+altitudes = np.arange(2000, 10000, 1000)  # высота
+
 max_x = float('-inf')
 best_simulation = None
 all_simulations_data = []
+for alt in altitudes:
+    for theta in thetas:
+        for alpha in alphas:
+            simulation_data = simulation(0.0, 1900, 0.01, 0, alt, 3 * a, 1440, theta, alpha, False, True, False, False)
+            last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
+            simulation_info = {"Theta": np.rad2deg(theta), "Alpha": np.rad2deg(alpha), "Altitude": alt, "X": last_x}
+            all_simulations_data.append(simulation_info)
 
-for theta in thetas:
-    for alpha in alphas:
-        simulation_data = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, theta, alpha, False, True, False, False)
-        last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
-        simulation_info = {"Theta": np.rad2deg(theta), "Alpha": np.rad2deg(alpha), "Last_X": last_x}
-        all_simulations_data.append(simulation_info)
-
-        if last_x > max_x:
-            max_x = last_x
-            best_simulation = simulation_data #содержит информацию о симуляции с самой дальней траектории
+            if last_x > max_x:
+                max_x = last_x
+                best_simulation = simulation_data #содержит информацию о симуляции с самой дальней траектории
 
 # Создание DataFrame из списка данных всех симуляций
 df = pd.DataFrame(all_simulations_data)
@@ -295,10 +294,8 @@ print(df)
 
 plot_flight_data(best_simulation)  # Построение графика для лучшей симуляции
 
-# ballistic = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(47), np.radians(0), False, True, False, False)
-# plot_flight_data(ballistic)
-
-# glide = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(30), np.radians(0), False, False, True, False)
+# # Рикошетирующая
+# glide = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(25), np.radians(0), False, False, True, False)
 # plot_flight_data(glide)
 
 # type3 = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(30), np.radians(0), False, False, False, True)
