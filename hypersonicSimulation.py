@@ -2,35 +2,24 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from isa import density
+from datetime import datetime
+import time
+from multiprocessing import Pool
 
-# region Константы и параметры ЛА
-# Константы
-g = 9.8                 # Ускорение свободного падения, м/с²
-Radius = 6371000        # Радиус Земли, м
-a = 331                 # Скорость звука, м/с
-pi = 3.141592653589793  # Число Пи
+# region Константы
+g = 9.8                         # Ускорение свободного падения, м/с²
+Radius = 6371000                # Радиус Земли, м
+a = 331                         # Скорость звука, м/с
+pi = 3.141592653589793          # Число Пи
+# endregion
 
-# Параметры ЛА
-length = 12.5           # Длина ЛА, м
-diameter = 0.5          # Диаметр ЛА, м
-radius = diameter / 2   # Радиус ЛА, м
+def simulation(t, t_end, dt,
+               x, y, v, theta, alpha, engine,
+               m, mha, mf,
+               A0, Am, Ae, a_ratio, Afin,
+               theta_for_eng_true, theta_for_eng_off, engine_time,
+               ballistic, glide, type3):
 
-Ae = pi * radius ** 2   # Выходное сечение ЛА, м²
-Am = Ae                 # Сечение миделя ЛА, м²
-A0 = 0.54 * Ae          # Сечение воздухозаборника ЛА, м²
-Afin = 0.2              # Площадь крыльев ЛА, м²
-
-mha = 990               # Масса только ЛА, кг
-mf = 450                # Начальная масса топлива, кг
-
-# print(density(2000))
-# print("Сечение воздухозаборника ЛА: " + str(A0) + " м²")
-# print("Сечение миделя ЛА: " + str(Am) + " м²")
-# print("Выходное сечение ЛА: " + str(Ae) + " м²")
-# endregion data
-
-
-def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide, type3):
     data = {
         "x": [],
         "y": [],
@@ -46,12 +35,10 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         "Drag": [],
         "Lift": [],
 
-        "nxa": [],
-        "nya": [],
-        "costheta": [],
-
         "air_mass_flow_rate": [],
         "fuel_mass_flow_rate": [],
+        "air_fuel_ratio": [],
+
         "specificImpulse": [],
 
         "t": []
@@ -61,18 +48,14 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         return density(altitude) * A0 * v
 
     def fuel_mass_flow_rate(altitude, v):
-        # fuel_ratio = 3.5      # Стехеометрический коэффициент для керосин/кислород
         fuel_ratio = 14.7       # Стехеометрический коэффициент для керосин/воздух
 
         mf = air_mass_flow_rate(altitude, v) / fuel_ratio
 
-        if mf > 2.2:
-            mf = 2.2
-
         return mf
 
     def thrust(altitude, v, m, engine):
-        thrust_ref = 40000              # Сила тяги, Н
+        thrust_ref = 22000              # Сила тяги, Н
         mach_ratio = (v / a) / 12
         if m > mha and engine and v > 2.5 * a:
             thrust = (fuel_mass_flow_rate(altitude, v) * thrust_ref) * mach_ratio
@@ -82,26 +65,28 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         return thrust
 
     def drag(altitude, v):
-        # if ballistic:
-        #     drag_coefficient = 0
-        # else:
-        #     drag_coefficient = 0.3
         drag_coefficient = 0.3
-
         return .5 * A0 * drag_coefficient * density(altitude) * v ** 2
 
     def lift(altitude, v):
-        if ballistic:
-            lift_coefficient = 0
-        else:
-            lift_coefficient = 0.3
+        lift_coefficient = 0.4
         return .5 * Afin * lift_coefficient * density(altitude) * v ** 2
 
     def specific_impulse(y, v, m, engine):
         T = thrust(y, v, m, engine)
-        g_fuel = fuel_mass_flow_rate(y, v)
+        g_fuel = fuel_mass_flow_rate(y, v) * g
 
         return T / g_fuel if T > 0 and g_fuel > 0 else 0
+
+    def air_fuel_ratio(y, v):
+        air_mass_flow = air_mass_flow_rate(y, v)
+        fuel_mass_flow = fuel_mass_flow_rate(y, v)
+
+        if fuel_mass_flow != 0:
+            af = air_mass_flow / fuel_mass_flow
+            return af
+        else:
+            return None  # Или какое-то другое значение по умолчанию, которое имеет смысл в вашем контексте
 
     def calculate_derivatives(t, x, y, v, theta, m, engine, alpha):
         P = thrust(y, v, m, engine)
@@ -154,31 +139,31 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
 
         return x, y, v, theta, m
 
+    engine_duration = 0  # Переменная для отслеживания времени работы двигателя
+
     while y > 0 and t < t_end:
 
-        #region Расчет других параметров
         weight = m * g
         acceleration = thrust(y, v, m, engine) / m
 
-        # nxa = (thrust(y, v, m, engine) - drag(y, v)) / m * g
-        # nya = (thrust(y, v, m, engine) + lift(y, v)) / m * g
-        #
-        # costheta = np.cos(theta)
-        #endregion Расчет других параметров
+        if y < 60000 and v < 12 * a:
+            if 0 < t < 20:
+                engine = True
 
-        if ballistic:
-            engine = True
+            if theta < np.deg2rad(theta_for_eng_true):
+                alpha = np.deg2rad(6)
+                engine = True
+                engine_duration += dt
+            elif theta > np.deg2rad(theta_for_eng_off):
+                alpha = np.deg2rad(0)
+
+            # Проверяем, достигнуто ли требуемое время работы двигателя
+            if engine_duration >= engine_time:
+                engine = False
+                engine_duration = 0
         else:
             engine = False
-
-        # if glide:
-        #     if 0.3 < t < 50:
-        #         engine = True
-        #     elif 80 < t and theta < 0:
-        #         alpha = np.deg2rad(6.1)
-        #         engine = True
-        #     else:
-        #         engine = False
+            engine_duration = 0
 
         # if weight - drag(y, v) <= 0 and t > 50 and y < 25000:
         #     engine = True
@@ -191,20 +176,19 @@ def simulation(t, t_end, dt, x, y, v, m, theta, alpha, engine, ballistic, glide,
         data["x"].append(x)
         data["y"].append(y)
         data["v"].append(v)
-        data["theta"].append(np.rad2deg(theta))
-        data["alpha"].append(np.rad2deg(alpha))
+        data["theta"].append(np.rad2deg(theta))  # Угол наклона траектории
+        data["alpha"].append(np.rad2deg(alpha))  # Угол атаки
         data["m"].append(m)
         data["weight"].append(weight)
         data["acceleration"].append(acceleration)
         data["Thrust"].append(thrust(y, v, m, engine))
         data["Drag"].append(drag(y, v))
         data["Lift"].append(lift(y, v))
-        # data["nxa"].append(nxa)
-        # data["nya"].append(nya)
-        # data["costheta"].append(costheta)
         data["specificImpulse"].append(specific_impulse(y, v, m, engine))
         data["air_mass_flow_rate"].append(air_mass_flow_rate(y, v))
         data["fuel_mass_flow_rate"].append(fuel_mass_flow_rate(y, v))
+        data["air_fuel_ratio"].append(air_fuel_ratio(y, v))
+
         data["t"].append(t)
         #endregion
 
@@ -234,10 +218,8 @@ def plot_flight_data(data):
         ("t", "Lift", "Подъемная сила, Н от времени"),
         ("t", "air_mass_flow_rate", "Массовый расход воздуха ПВРД, кг/с от времени"),
         ("t", "fuel_mass_flow_rate", "Массовый расход топлива ПВРД, кг/с от времени"),
+        ("t", "air_fuel_ratio", "Соотношение расхода воздуха к топливу"),
         ("t", "specificImpulse", "Удельный импульс, от времени"),
-        # ("t", "nxa", "nxa"),
-        # ("t", "nya", "nya"),
-        # ("t", "costheta", "costheta"),
         ("x", "y", "Траектория полета ЛА")
     ]
 
@@ -253,12 +235,14 @@ def plot_flight_data(data):
         xaxis=dict(
             title="Время, с",
             tickfont=dict(size=18, family='Times New Roman'),
-            title_font=dict(size=18, family='Times New Roman')
-        ),
+            title_font=dict(size=18, family='Times New Roman'),
+            tickformat = "f"  # Настройка формата чисел на оси
+    ),
         yaxis=dict(
             title="Значение",
             tickfont=dict(size=18, family='Times New Roman'),
-            title_font=dict(size=18, family='Times New Roman')
+            title_font=dict(size=18, family='Times New Roman'),
+            tickformat = "f"  # Настройка формата чисел на оси
         ),
         height=1000,
         width=1700,
@@ -268,35 +252,78 @@ def plot_flight_data(data):
 
     fig.show()
 
+def save_data_to_excel(data, filename=None):
+    # Если имя файла не указано, используйте текущее время
+    if filename is None:
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"data_{current_time}.xlsx"
 
-thetas = np.radians(np.arange(0, 48, 1))  # Угол тета от 30 до 55 градусов с шагом 5 градусов
-alphas = np.radians(np.arange(0, 6, 1))  # Угол альфа от -5 до 5 градусов с шагом 5 градусов
-altitudes = np.arange(2000, 10000, 1000)  # высота
+    # Создание DataFrame из данных
+    df = pd.DataFrame(data)
 
-max_x = float('-inf')
-best_simulation = None
-all_simulations_data = []
-for alt in altitudes:
-    for theta in thetas:
-        for alpha in alphas:
-            simulation_data = simulation(0.0, 1900, 0.01, 0, alt, 3 * a, 1440, theta, alpha, False, True, False, False)
-            last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
-            simulation_info = {"Theta": np.rad2deg(theta), "Alpha": np.rad2deg(alpha), "Altitude": alt, "X": last_x}
-            all_simulations_data.append(simulation_info)
+    # Сохранение DataFrame в файл Excel
+    df.to_excel(filename, index=False)
 
-            if last_x > max_x:
-                max_x = last_x
-                best_simulation = simulation_data #содержит информацию о симуляции с самой дальней траектории
+    print(f"Данные успешно сохранены в файл {filename}")
 
-# Создание DataFrame из списка данных всех симуляций
-df = pd.DataFrame(all_simulations_data)
-print(df)
+if __name__ == '__main__':
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = []
 
-plot_flight_data(best_simulation)  # Построение графика для лучшей симуляции
 
-# # Рикошетирующая
-# glide = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(25), np.radians(0), False, False, True, False)
-# plot_flight_data(glide)
+    # Начальные данные
+    thetas = np.deg2rad(np.arange(10, 15, 5))  # Угол наклона траектории
+    alphas = np.deg2rad(np.arange(0, 4, 2))  # Угол атаки
+    altitudes = np.arange(10000, 14000, 4000)  # Высота
+    velocities = np.arange(3, 4, 1)  # Скорость
+    theta_for_eng_trues = np.arange(5, 10, 5)
+    theta_for_eng_offs = np.arange(5, 10, 5)
+    engine_times = np.arange(2, 20, 2)
+    max_x = float('-inf')
+    best_simulation = None
+    all_simulations_data = []
 
-# type3 = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(30), np.radians(0), False, False, False, True)
-# plot_flight_data(glide)
+    # Переменная для подсчета количества симуляций
+    simulation_count = 0
+
+    for alt in altitudes:
+        for vel in velocities:
+            for theta in thetas:
+                for alpha in alphas:
+                    for theta_eng_true in theta_for_eng_trues:
+                        for theta_eng_off in theta_for_eng_offs:
+                            for eng_time in engine_times:
+                                simulation_count += 1  # Инкрементируем счетчик симуляций
+                                start_time = time.time()  # Замер времени начала симуляции
+                                simulation_data = simulation(0.0, 1900, 0.01,
+                                                             0, alt, vel * a, theta, alpha, False,
+                                                             1800, 1000, 800,
+                                                             1, 0.5, 1, 0.5, 0.5,
+                                                             theta_eng_true, theta_eng_off, eng_time,
+                                                             True, False, False)
+                                end_time = time.time()  # Замер времени завершения симуляции
+
+                                last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
+                                simulation_info = {"Theta": np.rad2deg(theta), "Alpha": np.rad2deg(alpha),
+                                                   "Altitude": alt, "X": last_x, "Time": end_time - start_time}
+                                all_simulations_data.append(simulation_info)
+
+                                if last_x > max_x:
+                                    max_x = last_x
+                                    best_simulation = simulation_data  # содержит информацию о симуляции с самой дальней траектории
+
+    print(f"Количество симуляций: {simulation_count}")
+    save_data_to_excel(all_simulations_data)
+
+    if best_simulation is not None:
+        plot_flight_data(best_simulation)
+    else:
+        print("Ни одна из симуляций не завершилась успешно.")
+
+    # # Рикошетирующая
+    # glide = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(25), np.radians(0), False, False, True, False)
+    # plot_flight_data(glide)
+
+    # type3 = simulation(0.0, 999, 0.01, 0, 2000, 3 * a, 1440, np.radians(30), np.radians(0), False, False, False, True)
+    # plot_flight_data(glide)
+
