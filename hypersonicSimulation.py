@@ -5,6 +5,8 @@ from isa import density
 from datetime import datetime
 import time
 from multiprocessing import Pool
+import concurrent.futures
+from itertools import product
 
 # region Константы
 g = 9.8                         # Ускорение свободного падения, м/с²
@@ -194,9 +196,6 @@ def simulation(t, t_end, dt,
 
         t += dt  # Обновляем время
 
-    last_x = data["x"][-1]
-    print("Максимальная дальность данной симуляции:", last_x)
-
     return data
 
 
@@ -267,18 +266,24 @@ def save_data_to_excel(data, filename=None):
     print(f"Данные успешно сохранены в файл {filename}")
 
 if __name__ == '__main__':
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = []
-
+    start_time = time.time()  # Замер времени начала симуляции
 
     # Начальные данные
-    thetas = np.deg2rad(np.arange(10, 15, 5))  # Угол наклона траектории
-    alphas = np.deg2rad(np.arange(0, 4, 2))  # Угол атаки
+    thetas = np.deg2rad(np.arange(0, 25, 5))  # Угол наклона траектории
+    alphas = np.deg2rad(np.arange(0, 1, 1))  # Угол атаки
     altitudes = np.arange(10000, 14000, 4000)  # Высота
     velocities = np.arange(3, 4, 1)  # Скорость
-    theta_for_eng_trues = np.arange(5, 10, 5)
-    theta_for_eng_offs = np.arange(5, 10, 5)
-    engine_times = np.arange(2, 20, 2)
+    theta_for_eng_trues = np.arange(-10, 10, 5)
+    theta_for_eng_offs = np.arange(-10, 10, 5)
+    engine_times = np.arange(10, 20, 5)
+
+    # Рассчет количества симуляций
+    simulation_count = len(
+        list(product(thetas, alphas, altitudes, velocities, theta_for_eng_trues, theta_for_eng_offs, engine_times)))
+
+    # Вывод количества симуляций в консоль
+    print(f"Количество симуляций: {simulation_count}")
+
     max_x = float('-inf')
     best_simulation = None
     all_simulations_data = []
@@ -286,33 +291,41 @@ if __name__ == '__main__':
     # Переменная для подсчета количества симуляций
     simulation_count = 0
 
-    for alt in altitudes:
-        for vel in velocities:
-            for theta in thetas:
-                for alpha in alphas:
-                    for theta_eng_true in theta_for_eng_trues:
-                        for theta_eng_off in theta_for_eng_offs:
-                            for eng_time in engine_times:
-                                simulation_count += 1  # Инкрементируем счетчик симуляций
-                                start_time = time.time()  # Замер времени начала симуляции
-                                simulation_data = simulation(0.0, 1900, 0.01,
-                                                             0, alt, vel * a, theta, alpha, False,
-                                                             1800, 1000, 800,
-                                                             1, 0.5, 1, 0.5, 0.5,
-                                                             theta_eng_true, theta_eng_off, eng_time,
-                                                             True, False, False)
-                                end_time = time.time()  # Замер времени завершения симуляции
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = []
 
-                                last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
-                                simulation_info = {"Theta": np.rad2deg(theta), "Alpha": np.rad2deg(alpha),
-                                                   "Altitude": alt, "X": last_x, "Time": end_time - start_time}
-                                all_simulations_data.append(simulation_info)
+        for alt in altitudes:
+            for vel in velocities:
+                for theta in thetas:
+                    for alpha in alphas:
+                        for theta_eng_true in theta_for_eng_trues:
+                            for theta_eng_off in theta_for_eng_offs:
+                                for eng_time in engine_times:
+                                    futures.append(executor.submit(simulation,
+                                                                   0.0, 1900, 0.01,
+                                                                   0, alt, vel * a, theta, alpha, False,
+                                                                   1800, 1000, 800,
+                                                                   1, 0.5, 1, 0.5, 0.5,
+                                                                   theta_eng_true, theta_eng_off, eng_time,
+                                                                   True, False, False))
+    # Получение результатов
+    for future in concurrent.futures.as_completed(futures):
+        simulation_data = future.result()
 
-                                if last_x > max_x:
-                                    max_x = last_x
-                                    best_simulation = simulation_data  # содержит информацию о симуляции с самой дальней траектории
+        last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
+        simulation_info = {"Theta": np.rad2deg(theta), "Alpha": np.rad2deg(alpha),
+                           "Altitude": alt, "X": last_x}
+        all_simulations_data.append(simulation_info)
 
-    print(f"Количество симуляций: {simulation_count}")
+        if last_x > max_x:
+            max_x = last_x
+            best_simulation = simulation_data  # содержит информацию о симуляции с самой дальней траектории
+
+    end_time = time.time()  # Замер времени завершения симуляции
+    total_time_seconds = end_time - start_time
+    total_time_minutes = total_time_seconds / 60
+    print(f"Количество симуляций: {len(all_simulations_data)}, общее время: {total_time_minutes:.2f} минут")
+
     save_data_to_excel(all_simulations_data)
 
     if best_simulation is not None:
