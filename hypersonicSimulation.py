@@ -20,9 +20,7 @@ alpha = 0
 def simulation(t, t_end, dt,
                x, y, v, theta, alpha, engine,
                m, mha, mf, throttle,
-               A0, Afin,
-               # theta_for_eng_true, theta_for_eng_off, engine_time,
-               ballistic, glide, type3):
+               A0, Afin):
 
     """
     Проводит симуляцию движения объекта в атмосфере.
@@ -477,9 +475,7 @@ if __name__ == '__main__':
                                                                        0.0, 1900, 0.01,
                                                                        0, alt, vel * a, theta, alpha, False,
                                                                        3800, 3000, 800,
-                                                                       1, 0.5, 1, 0.5, 0.5,
-                                                                       # theta_eng_true, theta_eng_off, eng_time,
-                                                                       True, False, False))
+                                                                       1, 0.5, 1, 0.5, 0.5))
         # Получение результатов
         for future in concurrent.futures.as_completed(futures):
             simulation_data = future.result()
@@ -508,8 +504,6 @@ if __name__ == '__main__':
         simul2 = simulation(0.0, 1900, 0.01,
                            0, 9000, 4 * a, np.deg2rad(30), np.deg2rad(0), False,
                            1900, 1000, 900, throttle,
-                           1, 0.5,
-                           # theta_eng_true, theta_eng_off, eng_time,
-                           True, False, False)
+                           1, 0.5)
         plot_flight_data(simul2)
 
