@@ -14,14 +14,38 @@ Radius = 6371000                # Радиус Земли, м
 a = 331                         # Скорость звука, м/с
 pi = 3.141592653589793          # Число Пи
 throttle = 0
+alpha = 0
 # endregion
 
 def simulation(t, t_end, dt,
                x, y, v, theta, alpha, engine,
-               m, mha, mf,
-               A0, Afin, throttle,
+               m, mha, mf, throttle,
+               A0, Afin,
                # theta_for_eng_true, theta_for_eng_off, engine_time,
                ballistic, glide, type3):
+
+    """
+    Проводит симуляцию движения объекта в атмосфере.
+
+    :param t: Текущее время симуляции.
+    :param t_end: Конечное время симуляции.
+    :param dt: Шаг времени симуляции.
+    :param x: Позиция объекта по оси X.
+    :param y: Позиция объекта по оси Y.
+    :param v: Скорость объекта.
+    :param theta: Угол наклона объекта относительно горизонтали.
+    :param alpha: Угол атаки объекта.
+    :param engine: Переменная, указывающая, работает ли двигатель объекта.
+    :param m: Масса объекта.
+    :param mha: Минимальная масса объекта, при которой двигатель может работать.
+    :param mf: Масса топлива.
+    :param throttle: Уровень управления тягой.
+    :param A0: Площадь поперечного сечения прямоточного ракетного двигателя.
+    :param Afin: Площадь поперечного сечения сопла.
+    :param ballistic: Параметр, указывающий на режим полета.
+    :param glide: Параметр, указывающий на режим полета.
+    :param type3: Параметр, указывающий на режим полета.
+    """
 
     data = {
         "x": [],
@@ -44,11 +68,33 @@ def simulation(t, t_end, dt,
         "specificImpulse": [],
         "throttle": [],
 
+        "wd_ratio": [],
+
         "t": []
     }
 
-    # Управление тягой в зависимости от педали управления тягой
+    def control_alpha(target_alpha):
+        """
+        Изменяет угол атаки постепенно, приближая его к целевому значению.
+        :param target_alpha: Целевой угол атаки в радианах.
+        :return: Текущий угол атаки в радианах после изменения.
+        """
+        global alpha
+        max_alpha_increase_rate = np.deg2rad(0.05)
+
+        if target_alpha > alpha:
+            alpha += min(max_alpha_increase_rate, target_alpha - alpha)
+        elif target_alpha < alpha:
+            alpha -= min(max_alpha_increase_rate, alpha - target_alpha)
+
+        return alpha
+
     def control_throttle(throttle_pedal):
+        """
+        Изменяет тягу постепенно в соответствии с педалью управления тягой.
+        :param throttle_pedal: Уровень "нажатия педали" управления тягой.
+        :return: Уровень тяги после изменения.
+        """
         global throttle
         max_throttle_increase_rate = 0.01
 
@@ -60,27 +106,48 @@ def simulation(t, t_end, dt,
 
         return throttle
 
-    # Расчет мощности двигателя в зависимости от "нажатия педали"
     def engine_power(throttle):
+        """
+        Вычисляет мощность двигателя в зависимости от уровня "нажатия педали".
+        :param throttle: Уровень "нажатия педали".
+        :return: Мощность двигателя.
+        """
         max_thrust = 300000  # Максимальная сила тяги ПВРД
         return throttle * max_thrust
 
-    # Массовый расход воздуха ПВРД
     def air_mass_flow_rate(altitude, v):
+        """
+        Рассчитывает массовый расход воздуха через прямоточный ракетный двигатель.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :return: Массовый расход воздуха через прямоточный ракетный двигатель, кг/с.
+        """
         return density(altitude) * A0 * v
 
-    # Массовый расход топлива ПВРД
     def fuel_mass_flow_rate(altitude, v, throttle):
-        # Стехеометрический коэффициент для керосин/воздух
-        fuel_ratio = 15
+        """
+        Рассчитывает массовый расход топлива через прямоточный ракетный двигатель.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :param throttle: Уровень нажатия на педаль управления тягой.
+        :return: Массовый расход топлива через прямоточный ракетный двигатель, кг/с.
+        """
+        fuel_ratio = 15         # Стехеометрический коэффициент для керосин/воздух
         return air_mass_flow_rate(altitude, v) / fuel_ratio * throttle
 
-    # Расчет силы тяги ПВРД
     def thrust(altitude, v, m, throttle):
+        """
+        Рассчитывает силу тяги прямоточного ракетного двигателя.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :param m: Масса объекта, кг.
+        :param throttle: Уровень нажатия на педаль управления тягой.
+        :return: Сила тяги ПВРД, Н.
+        """
+        mach_ratio = (v / a) / 12   # Вероятно надо изменить!
         thrust_ref = engine_power(throttle)
-        mach_ratio = (v / a) / 12
         thrust_xx = (fuel_mass_flow_rate(altitude, v, throttle) * thrust_ref) * mach_ratio
-
+        # вероятно надо добавить сюда переменную engine или как то еще ограничить...
         if m > mha and v > 2 * a:
             if thrust_xx > 300000:
                 thrust = 300000
@@ -91,24 +158,39 @@ def simulation(t, t_end, dt,
 
         return thrust
 
-    # Расчет силы сопротилвения ПВРД
     def drag(altitude, v):
+        """
+        Рассчитывает силу сопротивления ПВРД.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :return: Сила сопротивления ПВРД, Н.
+        """
         drag_coefficient = 0.3
         return .5 * A0 * drag_coefficient * density(altitude) * v ** 2
 
-    # Расчет подъемной силы ПВРД
     def lift(altitude, v):
+        """
+        Рассчитывает подъемную силу ПВРД.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :return: Подъемная сила ПВРД, Н.
+        """
         lift_coefficient = 0.4
         return .5 * Afin * lift_coefficient * density(altitude) * v ** 2
 
-    # Расчет удельного импульса ПВРД
     def specific_impulse(y, v, m):
+        """
+        Вычисляет удельный импульс.
+        :param y: Высота объекта, м.
+        :param v: Скорость объекта, м/с.
+        :param m: Масса объекта, кг.
+        :return: Удельный импульс.
+        """
         T = thrust(y, v, m, throttle)
         g_fuel = fuel_mass_flow_rate(y, v, throttle) * g
 
         return T / g_fuel if T > 0 and g_fuel > 0 else 0
 
-    # Расчет производных
     def calculate_derivatives(t, x, y, v, theta, m, alpha, throttle):
         P = thrust(y, v, m, throttle)
         Drag = drag(y, v)
@@ -124,8 +206,25 @@ def simulation(t, t_end, dt,
 
         return dxdt, dydt, dvdt, dthetadt, dmdt
 
-    # Рунге-Кутта 4 порядка
     def runge_kutta_step(t, dt, x, y, v, theta, m, alpha, throttle):
+        """
+        Выполняет один шаг метода Рунге-Кутты четвертого порядка точности
+        для численного решения дифференциальных уравнений.
+
+        Погрешность метода Рунге-Кутты четвертого порядка
+        составляет приблизительно O(dt^5)
+
+        :param t: Текущее время.
+        :param dt: Величина шага времени.
+        :param x: Текущая горизонтальная координата.
+        :param y: Текущая вертикальная координата.
+        :param v: Текущая скорость.
+        :param theta: Текущий угол наклона траектории.
+        :param m: Текущая масса.
+        :param alpha: Текущий угол атаки.
+        :param throttle: Уровень нажатия на педаль управления тягой.
+        :return: Новые значения горизонтальной координаты, вертикальной координаты, скорости, угла наклона и массы.
+        """
         k1_x, k1_y, k1_v, k1_theta, k1_m = calculate_derivatives(t, x, y, v, theta, m, alpha, throttle)
         k2_x, k2_y, k2_v, k2_theta, k2_m = calculate_derivatives(t + dt / 2,
                                                                  x + k1_x * dt / 2,
@@ -162,7 +261,7 @@ def simulation(t, t_end, dt,
         return x, y, v, theta, m
 
     # Переменные для управления двигателем и углом атаки
-    start_engine_time = 10              # Время начала стартовой работы двигателя
+    start_engine_time = 8              # Время начала стартовой работы двигателя
     engine_duration_limit = 15          # Максимальная продолжительность работы двигателя
     engine_duration = 0                 # Переменная для отслеживания времени работы двигателя
 
@@ -174,27 +273,52 @@ def simulation(t, t_end, dt,
         weight = m * g
         acceleration = thrust(y, v, m, throttle) / m
 
+        d = drag(y, v) / 1000
+        w = weight / 1000
+        wd_ratio = w - d
+
         # стартовый запуск двигателя
-        if t < start_engine_time:
-            throttle_pedal = 0.8
+        if t < start_engine_time and y<30000:
+            target_throttle = 0.3
             engine = True
         else:
-            throttle_pedal = 0
             engine = False
 
-        if t > start_engine_time + 1:
-            # Равновесие?
-            if weight - drag(y, v) <= 0 and theta < np.deg2rad(10):
-                alpha = np.deg2rad(3)
-                throttle_pedal = 0.5
-                engine = True
-            elif weight - drag(y, v) > 0 and theta > np.deg2rad(20):
-                throttle_pedal = 0.5
-                alpha = np.deg2rad(6)
-                engine = True
-            elif theta > np.deg2rad(20):
-                engine = False
-                throttle_pedal = 0
+        if y < 45000 and theta < np.deg2rad(20):
+            target_throttle = 0.3
+            target_alpha = np.deg2rad(6.2)
+            engine = True
+        else:
+            target_alpha = np.deg2rad(0)
+            engine = False
+
+        # if 20000 < y < 45000 and t > 5:
+        #     if weight - drag(y, v) <= 0:
+        #         alpha = np.deg2rad(7)
+        #         target_throttle = 0.6
+        #         engine = True
+        #     elif weight - drag(y, v) > 0 or theta < np.deg2rad(10):
+        #         alpha = np.deg2rad(7)
+        #         target_throttle = 0.8
+        #         engine = True
+        # else:
+        #     engine = False
+        #     alpha = np.deg2rad(0)
+
+        # рикошеты
+        # if t > start_engine_time + 1:
+        #     # Равновесие?
+        #     if weight - drag(y, v) <= 0 and theta < np.deg2rad(10):
+        #         alpha = np.deg2rad(3)
+        #         target_throttle = 0.1
+        #         engine = True
+        #     elif weight - drag(y, v) > 0 and theta > np.deg2rad(20):
+        #         target_throttle = 0.2
+        #         alpha = np.deg2rad(6)
+        #         engine = True
+        #     elif theta > np.deg2rad(20):
+        #         engine = False
+        #         target_throttle = 0
 
         # Проверка продолжительности работы двигателя
         if engine:
@@ -209,10 +333,11 @@ def simulation(t, t_end, dt,
             if dt < 0.1:
                 engine = True
             engine_duration = 0
-            throttle_pedal = 0
+            target_throttle = 0
 
 
-        throttle = control_throttle(throttle_pedal)
+        throttle = control_throttle(target_throttle)
+        alpha = control_alpha(target_alpha)
 
         x, y, v, theta, m = runge_kutta_step(t, dt, x, y, v, theta, m, alpha, throttle)
 
@@ -232,6 +357,7 @@ def simulation(t, t_end, dt,
         data["air_mass_flow_rate"].append(air_mass_flow_rate(y, v))
         data["fuel_mass_flow_rate"].append(fuel_mass_flow_rate(y, v, throttle))
         data["throttle"].append(throttle)
+        data["wd_ratio"].append(wd_ratio)
 
         data["t"].append(t)
         #endregion
@@ -261,6 +387,7 @@ def plot_flight_data(data):
         ("t", "fuel_mass_flow_rate", "Массовый расход топлива ПВРД, кг/с от времени"),
         ("t", "specificImpulse", "Удельный импульс, от времени"),
         ("t", "throttle", "throttle"),
+        ("t", "wd_ratio", "wd_ratio"),
         ("x", "y", "Траектория полета ЛА")
     ]
 
@@ -380,9 +507,8 @@ if __name__ == '__main__':
     else:
         simul2 = simulation(0.0, 1900, 0.01,
                            0, 9000, 4 * a, np.deg2rad(30), np.deg2rad(0), False,
-                           1900, 1000, 900,
+                           1900, 1000, 900, throttle,
                            1, 0.5,
-                            1,
                            # theta_eng_true, theta_eng_off, eng_time,
                            True, False, False)
         plot_flight_data(simul2)
