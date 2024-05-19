@@ -258,11 +258,35 @@ def simulation(t, t_end, dt,
 
         return x, y, v, theta, m
 
+    def engine_control(engine, engine_duration, engine_duration_limit, dt, target_throttle):
+        """
+        Управляет состоянием работы двигателя и его продолжительностью.
+
+        :param engine: Переменная, указывающая, работает ли двигатель объекта.
+        :param engine_duration: Продолжительность работы двигателя.
+        :param engine_duration_limit: Максимальная продолжительность работы двигателя.
+        :param dt: Шаг времени симуляции.
+        :param target_throttle: Целевой уровень управления тягой.
+        :return: Обновленные значения переменных engine и engine_duration.
+        """
+        if engine:
+            engine_duration += dt
+            if engine_duration > engine_duration_limit:
+                engine = False
+                engine_duration = 0
+        else:
+            if dt < 0.1:
+                engine = True
+            engine_duration = 0
+            target_throttle = 0
+
+        return engine, engine_duration, target_throttle
+
     # Переменные для управления двигателем и углом атаки
     start_engine_time = 8              # Время начала стартовой работы двигателя
     engine_duration_limit = 15          # Максимальная продолжительность работы двигателя
     engine_duration = 0                 # Переменная для отслеживания времени работы двигателя
-
+    eng_dt = 0.1
     max_pitch_angle = np.deg2rad(30)    # Максимальный угол атаки для подъема
     min_pitch_angle = np.deg2rad(10)    # Минимальный угол атаки для равновесия
     check_balance_interval = 1          # каждые 10 секунд
@@ -290,50 +314,8 @@ def simulation(t, t_end, dt,
             target_alpha = np.deg2rad(0)
             engine = False
 
-        # if 20000 < y < 45000 and t > 5:
-        #     if weight - drag(y, v) <= 0:
-        #         alpha = np.deg2rad(7)
-        #         target_throttle = 0.6
-        #         engine = True
-        #     elif weight - drag(y, v) > 0 or theta < np.deg2rad(10):
-        #         alpha = np.deg2rad(7)
-        #         target_throttle = 0.8
-        #         engine = True
-        # else:
-        #     engine = False
-        #     alpha = np.deg2rad(0)
 
-        # рикошеты
-        # if t > start_engine_time + 1:
-        #     # Равновесие?
-        #     if weight - drag(y, v) <= 0 and theta < np.deg2rad(10):
-        #         alpha = np.deg2rad(3)
-        #         target_throttle = 0.1
-        #         engine = True
-        #     elif weight - drag(y, v) > 0 and theta > np.deg2rad(20):
-        #         target_throttle = 0.2
-        #         alpha = np.deg2rad(6)
-        #         engine = True
-        #     elif theta > np.deg2rad(20):
-        #         engine = False
-        #         target_throttle = 0
-
-        # Проверка продолжительности работы двигателя
-        if engine:
-            engine_duration += dt
-            if engine_duration > engine_duration_limit:
-                engine = False
-                # print("stoppping engine")
-                engine_duration = 0
-        else:
-            # Если двигатель выключен, но время его выключения очень короткое,
-            # мы все равно считаем его работающим
-            if dt < 0.1:
-                engine = True
-            engine_duration = 0
-            target_throttle = 0
-
-
+        engine, engine_duration, target_throttle = engine_control(engine, engine_duration, engine_duration_limit, eng_dt, target_throttle)
         throttle = control_throttle(target_throttle)
         alpha = control_alpha(target_alpha)
 
