@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from isa import density, temperature
 from datetime import datetime
 import time
@@ -8,6 +9,7 @@ from multiprocessing import Pool
 import concurrent.futures
 from itertools import product
 from joblib import Parallel, delayed
+# import gc  # Импорт сборщика мусора
 
 # region Константы
 g = 9.8                         # Ускорение свободного падения, м/с²
@@ -119,7 +121,7 @@ def simulation(t, t_end, dt,
         :param throttle: Уровень "нажатия педали".
         :return: Мощность двигателя.
         """
-        max_thrust = 70000  # Максимальная сила тяги ПВРД
+        max_thrust = 30000  # Максимальная сила тяги ПВРД
         return throttle * max_thrust
 
     def air_mass_flow_rate(altitude, v):
@@ -158,8 +160,8 @@ def simulation(t, t_end, dt,
         # вероятно надо добавить сюда переменную engine или как то еще ограничить...
         if m > mha and v > 2 * a:
             # thrust = (gffuel * thrust_ref) * mach_ratio
-            if thrust_xx > 300000:
-                thrust = 300000
+            if thrust_xx > 200000:
+                thrust = 200000
             else:
                 thrust = thrust_xx
         else:
@@ -304,10 +306,42 @@ def simulation(t, t_end, dt,
 
         return engine, engine_duration, target_throttle
 
+    # def engine_control(engine, engine_duration, engine_duration_limit, dt, target_throttle, engine_cooldown,
+    #                    engine_cooldown_limit):
+    #     """
+    #     Управляет состоянием работы двигателя и его продолжительностью.
+    #
+    #     :param engine: Переменная, указывающая, работает ли двигатель объекта.
+    #     :param engine_duration: Продолжительность работы двигателя.
+    #     :param engine_duration_limit: Максимальная продолжительность работы двигателя.
+    #     :param dt: Шаг времени симуляции.
+    #     :param target_throttle: Целевой уровень управления тягой.
+    #     :param engine_cooldown: Время до следующего разрешенного включения двигателя.
+    #     :param engine_cooldown_limit: Минимальное время между включениями двигателя.
+    #     :return: Обновленные значения переменных engine, engine_duration, target_throttle, engine_cooldown.
+    #     """
+    #     if engine:
+    #         engine_duration += dt
+    #         if engine_duration > engine_duration_limit:
+    #             engine = False
+    #             engine_duration = 0
+    #             target_throttle = 0
+    #             engine_cooldown = engine_cooldown_limit
+    #     else:
+    #         if engine_cooldown > 0:
+    #             engine_cooldown -= dt
+    #         else:
+    #             engine = True
+    #             engine_duration = 0
+    #             engine_cooldown = 0
+    #             target_throttle = 0
+    #
+    #     return engine, engine_duration, target_throttle, engine_cooldown
+
     engine_duration = 0                 # Переменная для отслеживания времени работы двигателя
-    engine_duration_limit = 50          # Максимальная продолжительность работы двигателя
+    engine_duration_limit = 10          # Максимальная продолжительность работы двигателя
     engine_cooldown = 0
-    engine_cooldown_limit = 0           # Время ожидания перед повторным включением двигателя
+    engine_cooldown_limit = 10           # Время ожидания перед повторным включением двигателя
     eng_dt = 0.001
 
     while y > 0 and t < t_end:
@@ -329,15 +363,24 @@ def simulation(t, t_end, dt,
         nya = (tyaga * np.sin(alpha) + l) / weight
         costheta = np.cos(theta)
 
-        if t < 500:
-        # Начальная баллистическая траектория
-            target_throttle = 0.7
-            target_alpha = np.deg2rad(0)
+        if t < 20:
+            # Начальная баллистическая траектория
+            target_throttle = 1
+            target_alpha = np.deg2rad(alpha)
+            # initial_engine_state = True
             engine = True
         else:
+            # initial_engine_state = False
             engine = False
 
-
+        if t > 20:
+            if t > 20 and y < 45000 and theta < np.deg2rad(5):
+                target_throttle = 0.3
+                target_alpha = np.deg2rad(6.2)
+                engine = True
+            else:
+                target_alpha = np.deg2rad(0)
+                engine = False
         # if t > 20 and nya <= costheta or theta <= np.deg2rad(0) and planning == False:
         #     target_throttle = 0.9
         #     target_alpha = np.deg2rad(9)
@@ -390,13 +433,15 @@ def simulation(t, t_end, dt,
                                                                   engine_duration_limit,
                                                                   eng_dt,
                                                                   target_throttle)
-        # engine, engine_duration, target_throttle, engine_cooldown = engine_control(engine,
-        #                                                                            engine_duration,
-        #                                                                            engine_duration_limit,
-        #                                                                            eng_dt,
-        #                                                                            target_throttle,
-        #                                                                            engine_cooldown,
-        #                                                                            engine_cooldown_limit)
+        # engine, engine_duration, target_throttle, engine_cooldown = engine_control(
+        #     engine if t >= 2000 else initial_engine_state,
+        #     engine_duration,
+        #     engine_duration_limit,
+        #     eng_dt,
+        #     target_throttle,
+        #     engine_cooldown,
+        #     engine_cooldown_limit
+        # )
         throttle = control_throttle(target_throttle)
         alpha = control_alpha(target_alpha)
 
@@ -500,16 +545,32 @@ def plot_data(data):
 def plot_all_trajectories(all_sim_data):
     fig = go.Figure()
 
-    for i, sim_info in enumerate(all_sim_data):
+    # Находим средний X по всем симуляциям
+    mean_x = sum(sim_info["SimulationData"]["x"][-1] for sim_info in all_sim_data) / len(all_sim_data)
+
+    # Сортируем симуляции по дальности
+    sorted_sim_data = sorted(all_sim_data, key=lambda x: x["SimulationData"]["x"][-1], reverse=True)
+    # Определяем минимальный и максимальный X для нормализации
+    min_x = min(sim_info["SimulationData"]["x"][-1] for sim_info in sorted_sim_data)
+    max_x = max(sim_info["SimulationData"]["x"][-1] for sim_info in sorted_sim_data)
+
+    for sim_info in sorted_sim_data:
         simulation_data = sim_info["SimulationData"]
         theta = sim_info["Theta"]
         alpha = sim_info["Alpha"]
         alt = sim_info["Altitude"]
         vel = sim_info["vel"]
-        label = f"Theta: {theta}, Alpha: {alpha}, Altitude: {alt}, Vel: {vel}"
+        label = f"θ: {theta}, α: {alpha}, H: {alt}, V: {vel/a}"
+
+        # Определение цвета в зависимости от значения X
+        color = 'black' if simulation_data["x"][-1] >= mean_x else 'gray'
+
+        # Нормализация дальности и вычисление толщины линии
+        normalized_x = (simulation_data["x"][-1] - min_x) / (max_x - min_x)
+        line_width = 0.5 + normalized_x * (3 - 0.5)
 
         fig.add_trace(go.Scatter(x=simulation_data["x"], y=simulation_data["y"], mode='lines',
-                                 name=label, line=dict(width=2),
+                                 name=label, line=dict(width=line_width, color=color),
                                  hovertemplate="X: %{x}<br>Y: %{y}"))
 
     fig.update_layout(
@@ -521,7 +582,11 @@ def plot_all_trajectories(all_sim_data):
             title_font=dict(size=14),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
-            ticklen=12  # Отступ между значением тика и самим тиком
+            ticklen=12,  # Отступ между значением тика и самим тиком
+            gridcolor='gray',  # Цвет сетки
+            linecolor='gray',  # Цвет осей
+            linewidth=1,  # Толщина линии оси
+            dtick=50     # Шаг тиков
         ),
         yaxis=dict(
             title="<b>Положение ЛА по оси Y, км</b>",
@@ -529,12 +594,19 @@ def plot_all_trajectories(all_sim_data):
             title_font=dict(size=14),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
-            ticklen=12  # Отступ между значением тика и самим тиком
+            ticklen=12,  # Отступ между значением тика и самим тиком
+            gridcolor='gray',  # Цвет сетки
+            zerolinecolor='gray',  # Цвет линии на уровне 0
+            linecolor='gray',  # Цвет осей
+            linewidth=1,  # Толщина линии оси
+            dtick=10     # Шаг тиков
         ),
         width=1400,
         height=700,
         showlegend=True,
         legend=dict(font=dict(size=14)),
+        paper_bgcolor='white',  # Установка белого фона бумаги
+        plot_bgcolor='white'    # Установка белого фона графика
     )
 
     fig.show()
@@ -552,7 +624,6 @@ def data_to_excel(data, filename=None):
     df.to_excel(filename, index=False)
 
     print(f"Данные успешно сохранены в файл {filename}")
-
 
 def simulate_one(alt, mach, theta, alpha, throttle):
     vel = mach * a
@@ -572,11 +643,11 @@ def simulate_one(alt, mach, theta, alpha, throttle):
         "SimulationData": simulation_data
     }
 
-
 def run_simulations_parallel(thetas, alphas, altitudes, machs, throttle):
     start_time = time.time()
 
     num_cores = -1  # используем все доступные ядра процессора
+    # num_cores = 4  # Ограничиваем количество ядер
     all_simulations_data = Parallel(n_jobs=num_cores)(
         delayed(simulate_one)(alt, mach, theta, alpha, throttle)
         for alt, mach, theta, alpha in product(altitudes, machs, thetas, alphas)
@@ -595,7 +666,6 @@ def run_simulations_parallel(thetas, alphas, altitudes, machs, throttle):
             best_sim_data = sim_data
 
     return all_simulations_data, best_sim_data, total_time_minutes
-
 
 def plot_data_for_best(best_sim_data):
     fig = go.Figure()
@@ -640,7 +710,6 @@ def plot_data_for_best(best_sim_data):
 
     fig.show()
 
-
 def run_simulations(thetas, alphas, altitudes, machs, throttle):
     all_simulations_data = []
     max_x = float('-inf')
@@ -680,11 +749,16 @@ def run_simulations(thetas, alphas, altitudes, machs, throttle):
 if __name__ == '__main__':
     sim = True
     if sim:
+
         # Начальные данные
-        thetas = np.arange(20, 47, 5)                 # Угол наклона траектории
-        alphas = np.arange(0, 1, 1)                     # Угол атаки
-        altitudes = np.arange(8000, 14000, 4000)        # Высота
-        machs = np.arange(3, 5, 1)                      # Скорость
+        thetas = np.arange(20, 45, 5)                        # Угол наклона траектории
+        alphas = np.arange(0, 1, 1)                         # Угол атаки
+        altitudes = np.arange(5000, 15000, 2000)           # Высота
+        machs = np.arange(3, 5, 1)                          # Скорость
+
+        # Рассчет количества симуляций
+        simulation_count = len(list(product(thetas, alphas, altitudes, machs)))
+        print(f"Количество симуляций: {simulation_count}")
 
         # all_sim_data, best_sim_data = run_simulations(thetas, alphas, altitudes, machs, throttle)
         all_sim_data_parallel, best_sim_data, total_time_minutes = run_simulations_parallel(thetas, alphas, altitudes, machs, throttle)
@@ -700,9 +774,9 @@ if __name__ == '__main__':
         else:
             print("Ни одна из симуляций не завершилась успешно.")
     else:
-        simul2 = simulation(0.0, 1900, 0.01,
-                           0, 8000, 3 * a, np.deg2rad(20), np.deg2rad(0), False,
-                           1500, 500, throttle,
+        simul2 = simulation(0.0, 2000, 0.01,
+                           0, 5000, 4 * a, np.deg2rad(16), np.deg2rad(0), False,
+                           2000, 1000, throttle,
                            0.3, 0.5)
         plot_data(simul2)
 # if __name__ == '__main__':
