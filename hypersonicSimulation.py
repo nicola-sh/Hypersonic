@@ -141,7 +141,9 @@ def simulation(t, t_end, dt,
         :param throttle: Уровень нажатия на педаль управления тягой.
         :return: Массовый расход топлива через прямоточный ракетный двигатель, кг/с.
         """
-        fuel_ratio = 15         # Стехеометрический коэффициент для керосин/воздух
+        fuel_ratio = 14.7         # Стехеометрический коэффициент для керосин/воздух
+        # fuel_ratio = 34         # Стехеометрический коэффициент для водород/воздух
+        # fuel_ratio = 8         # Стехеометрический коэффициент для водород/кислород
         return air_mass_flow_rate(altitude, v) / fuel_ratio * throttle
 
     def thrust(altitude, v, m, throttle):
@@ -342,7 +344,7 @@ def simulation(t, t_end, dt,
     engine_duration_limit = 10          # Максимальная продолжительность работы двигателя
     engine_cooldown = 0
     engine_cooldown_limit = 10           # Время ожидания перед повторным включением двигателя
-    eng_dt = 0.001
+    eng_dt = 0.5        # изм с 0.001 до 0.1
 
     while y > 0 and t < t_end:
 
@@ -365,7 +367,7 @@ def simulation(t, t_end, dt,
 
         if t < 20:
             # Начальная баллистическая траектория
-            target_throttle = 1
+            target_throttle = 0.8
             target_alpha = np.deg2rad(alpha)
             # initial_engine_state = True
             engine = True
@@ -373,14 +375,33 @@ def simulation(t, t_end, dt,
             # initial_engine_state = False
             engine = False
 
-        if t > 20:
-            if t > 20 and y < 45000 and theta < np.deg2rad(5):
-                target_throttle = 0.3
+        # if t > 20:
+        #     if t > 20 and y < 45000 and theta < np.deg2rad(5):
+        #         target_throttle = 0.3
+        #         target_alpha = np.deg2rad(6.2)
+        #         engine = True
+
+
+        if t > 20 and y < 50000 :
+            if theta < np.deg2rad(0) and lw_ratio != 0:
+                target_throttle = 0.4
                 target_alpha = np.deg2rad(6.2)
+                engine = True
+            elif theta > np.deg2rad(0) and lw_ratio != 0:
+                target_alpha = np.deg2rad(0)
+                engine = False
+            elif lw_ratio == 0 and d != tyaga:
+                target_throttle = 0.15
+                target_alpha = np.deg2rad(4)
+                engine = True
+            elif lw_ratio == 0 and d == tyaga:
+                target_throttle = 0.1
+                target_alpha = np.deg2rad(2)
                 engine = True
             else:
                 target_alpha = np.deg2rad(0)
                 engine = False
+
         # if t > 20 and nya <= costheta or theta <= np.deg2rad(0) and planning == False:
         #     target_throttle = 0.9
         #     target_alpha = np.deg2rad(9)
@@ -751,10 +772,10 @@ if __name__ == '__main__':
     if sim:
 
         # Начальные данные
-        thetas = np.arange(20, 45, 5)                        # Угол наклона траектории
+        thetas = np.arange(15, 50, 5)                        # Угол наклона траектории
         alphas = np.arange(0, 1, 1)                         # Угол атаки
         altitudes = np.arange(5000, 15000, 2000)           # Высота
-        machs = np.arange(3, 5, 1)                          # Скорость
+        machs = np.arange(4, 5, 1)                          # Скорость изм с 3 до 4
 
         # Рассчет количества симуляций
         simulation_count = len(list(product(thetas, alphas, altitudes, machs)))
