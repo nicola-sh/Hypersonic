@@ -115,15 +115,6 @@ def simulation(t, t_end, dt,
 
         return throttle
 
-    def engine_power(throttle):
-        """
-        Вычисляет мощность двигателя в зависимости от уровня "нажатия педали".
-        :param throttle: Уровень "нажатия педали".
-        :return: Мощность двигателя.
-        """
-        max_thrust = 30000  # Максимальная сила тяги ПВРД
-        return throttle * max_thrust
-
     def air_mass_flow_rate(altitude, v):
         """
         Рассчитывает массовый расход воздуха через прямоточный ракетный двигатель.
@@ -145,25 +136,18 @@ def simulation(t, t_end, dt,
         return air_mass_flow_rate(altitude, v) / fuel_ratio * throttle
 
     def thrust(altitude, v, m, throttle):
-        """
-        Рассчитывает силу тяги прямоточного ракетного двигателя.
-        :param altitude: Высота над уровнем моря, м.
-        :param v: Скорость объекта, м/с.
-        :param m: Масса объекта, кг.
-        :param throttle: Уровень нажатия на педаль управления тягой.
-        :return: Сила тяги ПВРД, Н.
-        """
-        mach_ratio = (v / a) / 12   # Вероятно надо изменить!
-        thrust_ref = engine_power(throttle)
-        gffuel = fuel_mass_flow_rate(altitude, v, throttle)
-        thrust_xx = (gffuel * thrust_ref) * mach_ratio
-        # вероятно надо добавить сюда переменную engine или как то еще ограничить...
+        # max_thrust = 12000
+        # mach_ratio = (v / a) / 4
+        # if m > mha and v > 2 * a:
+        #     return (fuel_mass_flow_rate(altitude, v, throttle) * (throttle * max_thrust)) / mach_ratio
+        # else:
+        #     return 0
         if m > mha and v > 2 * a:
-            # thrust = (gffuel * thrust_ref) * mach_ratio
-            if thrust_xx > 200000:
+            thrustX = (fuel_mass_flow_rate(altitude, v, throttle) * throttle * 30000) * ((v / a) / 12)
+            if thrustX > 200000:
                 thrust = 200000
             else:
-                thrust = thrust_xx
+                thrust = thrustX
         else:
             thrust = 0
 
@@ -373,7 +357,7 @@ def simulation(t, t_end, dt,
             # initial_engine_state = False
             engine = False
 
-        if t > 20 and y < 50000 :
+        if t > 20 and y < 50000:
             if theta < np.deg2rad(5) and lw_ratio != 0:
                 target_throttle = 0.4
                 target_alpha = np.deg2rad(6.2)
@@ -389,67 +373,12 @@ def simulation(t, t_end, dt,
                 target_alpha = np.deg2rad(0)
                 engine = False
 
-        # if t > 20 and nya <= costheta or theta <= np.deg2rad(0) and planning == False:
-        #     target_throttle = 0.9
-        #     target_alpha = np.deg2rad(9)
-        #     engine = True
-        # elif theta >= np.deg2rad(0):
-        #     planning = True
-        #     print("yuea")
-        #
-        # if planning:
-        #     target_throttle = 0.2
-        #     target_alpha = np.deg2rad(3)
-        #     engine = True
-
-
-        # # # Переход к горизонтальному полету
-        # if t > 40:
-        #     # if theta < 0:  # Пикирование
-        #     #     # print(f"Время: {t}, Высота: {y}, Угол траектории: {np.rad2deg(theta)}, Тяга: {tyaga}")
-        #     #     target_alpha = np.deg2rad(7)  # Угол атаки для выхода из пикирования
-        #     #     target_throttle = 0.4
-        #     #     engine = True
-        #     # elif 0 <= theta <= np.deg2rad(5):  # Горизонтальный полет
-        #     #     target_alpha = np.deg2rad(3)
-        #     #     target_throttle = 0.2
-        #     #     engine = True
-        #     # else:
-        #     #     target_alpha = np.deg2rad(5)  # Подъем для горизонтального полета
-        #     #     target_throttle = 0.3
-        #     #     engine = True
-        #     if d > 1000:  # точка перегиба
-        #         target_alpha = np.deg2rad(12)  # Угол атаки для выхода из пикирования
-        #         target_throttle = 0.5
-        #         engine = True
-
-            # elif 1 <= lw_ratio <= 5:  # Горизонтальный полет
-            #     target_alpha = np.deg2rad(6)
-            #     target_throttle = 0.4
-            #     engine = True
-            # elif d > tyaga:
-            #     target_alpha = np.deg2rad(2)  # Подъем для горизонтального полета
-            #     target_throttle = 0.1
-            #     engine = True
-
-        # if y > 45000:
-        #     engine = False
-
-
         engine, engine_duration, target_throttle = engine_control(engine,
                                                                   engine_duration,
                                                                   engine_duration_limit,
                                                                   eng_dt,
                                                                   target_throttle)
-        # engine, engine_duration, target_throttle, engine_cooldown = engine_control(
-        #     engine if t >= 2000 else initial_engine_state,
-        #     engine_duration,
-        #     engine_duration_limit,
-        #     eng_dt,
-        #     target_throttle,
-        #     engine_cooldown,
-        #     engine_cooldown_limit
-        # )
+
         throttle = control_throttle(target_throttle)
         alpha = control_alpha(target_alpha)
 
@@ -619,20 +548,6 @@ def plot_all_trajectories(all_sim_data):
 
     fig.show()
 
-def data_to_excel(data, filename=None):
-    # Если имя файла не указано, используйте текущее время
-    if filename is None:
-        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"data_{current_time}.xlsx"
-
-    # Создание DataFrame из данных
-    df = pd.DataFrame(data)
-
-    # Сохранение DataFrame в файл Excel
-    df.to_excel(filename, index=False)
-
-    print(f"Данные успешно сохранены в файл {filename}")
-
 def simulate_one(alt, mach, theta, alpha, throttle):
     vel = mach * a
     simulation_data = simulation(
@@ -718,42 +633,6 @@ def plot_data_for_best(best_sim_data):
 
     fig.show()
 
-def run_simulations(thetas, alphas, altitudes, machs, throttle):
-    all_simulations_data = []
-    max_x = float('-inf')
-    best_simulation = None
-    start_time = time.time()
-
-    for alt, mach, theta, alpha in product(altitudes, machs, thetas, alphas):
-        vel = mach * a
-        simulation_data = simulation(
-            0.0, 2000, 0.01,
-            0, alt, vel, np.deg2rad(theta), np.deg2rad(alpha), False,
-            2000, 1000, throttle,
-            0.3, 0.5)
-
-        last_x = simulation_data["x"][-1]
-        simulation_info = {
-            "Theta": theta,
-            "Alpha": alpha,
-            "Altitude": alt,
-            "vel": vel,
-            "X": last_x,
-            "SimulationData": simulation_data  # Сохраняем данные симуляции целиком
-        }
-        all_simulations_data.append(simulation_info)
-
-        if last_x > max_x:
-            max_x = last_x
-            best_simulation = simulation_data
-
-    end_time = time.time()
-    total_time_seconds = end_time - start_time
-    total_time_minutes = total_time_seconds / 60
-    print(f"Количество симуляций: {len(all_simulations_data)}, общее время: {total_time_minutes:.2f} минут")
-
-    return all_simulations_data, best_simulation
-
 if __name__ == '__main__':
     sim = True
     if sim:
@@ -768,13 +647,9 @@ if __name__ == '__main__':
         simulation_count = len(list(product(thetas, alphas, altitudes, machs)))
         print(f"Количество симуляций: {simulation_count}")
 
-        # all_sim_data, best_sim_data = run_simulations(thetas, alphas, altitudes, machs, throttle)
         all_sim_data_parallel, best_sim_data, total_time_minutes = run_simulations_parallel(thetas, alphas, altitudes, machs, throttle)
 
         print(f"Количество симуляций: {len(all_sim_data_parallel)}, общее время: {total_time_minutes:.2f} минут")
-        # data_to_excel(all_sim_data)
-        # data_to_excel(all_sim_data_parallel)
-        # plot_all_trajectories(all_sim_data)
         plot_all_trajectories(all_sim_data_parallel)
 
         if best_sim_data is not None:
@@ -787,72 +662,3 @@ if __name__ == '__main__':
                            2000, 1000, throttle,
                            0.3, 0.5)
         plot_data(simul2)
-# if __name__ == '__main__':
-#     sim = True
-#     if sim:
-#         start_time = time.time()  # Замер времени начала симуляции
-#
-#         # Начальные данные
-#         altitudes = np.arange(8000, 14000, 2000)  # Высота
-#         velocities = np.arange(3, 4, 0.5)  # Скорость
-#         thetas = np.deg2rad(np.arange(20, 45, 5))  # Угол наклона траектории
-#         # alphas = np.deg2rad(np.arange(0, 1, 1))  # Угол атаки
-#         # theta_for_eng_trues = np.arange(-10, 10, 5)
-#         # theta_for_eng_offs = np.arange(-10, 10, 5)
-#         # engine_times = np.arange(10, 20, 5)
-#
-#         # Рассчет количества симуляций
-#         simulation_count = len(list(product(altitudes, velocities, thetas)))
-#         print(f"Количество симуляций: {simulation_count}")
-#
-#         max_x = float('-inf')
-#         best_simulation = None
-#         all_simulations_data = []
-#         completed_simulations = 0
-#
-#         with concurrent.futures.ProcessPoolExecutor() as executor:
-#             futures = []
-#             for alt, vel, theta in product(altitudes, velocities, thetas):
-#                 futures.append(executor.submit(simulation,
-#                                                0.0, 1000, 0.01,
-#                                                0, alt, a * vel, theta, np.deg2rad(0),
-#                                                False, 2000, 1000,
-#                                                throttle, 0.3, 0.5))
-#         # Получение результатов
-#         for future in concurrent.futures.as_completed(futures):
-#             simulation_data = future.result()
-#
-#             last_x = simulation_data["x"][-1]  # Получение последнего значения x из данных симуляции
-#             alt, vel, theta = future.args[3:6]  # Extract inputs from future
-#             # Получение входных данных симуляции из future
-#             simulation_info = {"Theta": np.rad2deg(theta),
-#                                "Alpha": np.rad2deg(alpha),
-#                                "Altitude": alt,
-#                                "Vel": vel,
-#                                "X": last_x}
-#             all_simulations_data.append(simulation_info)
-#
-#             if last_x > max_x:
-#                 max_x = last_x
-#                 best_simulation = simulation_data  # содержит информацию о симуляции с самой дальней траекторией
-#
-#             completed_simulations += 1
-#
-#         end_time = time.time()  # Замер времени завершения симуляции
-#         total_time_seconds = end_time - start_time
-#         total_time_minutes = total_time_seconds / 60
-#         print(f"Количество завершенных симуляций: {completed_simulations}, общее время: {total_time_minutes:.2f} минут")
-#
-#         data_to_excel(all_simulations_data)
-#
-#         if best_simulation is not None:
-#             plot_data(best_simulation)
-#         else:
-#             print("Ни одна из симуляций не завершилась успешно.")
-#     else:
-#         simul2 = simulation(0.0, 1900, 0.05,
-#                            0, 5000, 4 * a, np.deg2rad(30), np.deg2rad(0), False,
-#                            2000, 1000,
-#                            throttle, 0.3, 0.5)
-#         plot_data(simul2)
-
