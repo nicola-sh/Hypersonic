@@ -1,18 +1,22 @@
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-import plotly.colors
-import pandas as pd
-from datetime import datetime
 import time
-from multiprocessing import Pool
-import concurrent.futures
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.colors
+from isa import density, temperature, pressure
 from itertools import product
 from joblib import Parallel, delayed
-from isa import density, temperature
+from datetime import datetime
+
+# region Константы
+g = 9.8                 # Ускорение свободного падения, м/с²
+Radius = 6371000        # Радиус Земли, м
+a = 331                 # Скорость звука, м/с
+pi = 3.141592653589793  # Число Пи
+# endregion
 
 def simulation(t, t_end, dt, x, y, v, theta, alpha,
-               engine, m, mf, throttle, A0, Afin):
+               m, mf, F0, Ffin, throttle):
     # region data
     mha = m - mf
     data = {
@@ -21,115 +25,103 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha,
         "Thrust": [], "Drag": [], "Lift": [],
         "air_mass_flow_rate": [], "fuel_mass_flow_rate": [],
         "specificImpulse": [], "throttle": [],
-        "tw_ratio": [], "dw_ratio": [], "lw_ratio_normal": [],
-        "nxa": [], "nya": [], "costheta": [], "t": []
+        "TW": [], "DW": [], "Thrust_req": [],
+        "nx": [], "ny": [], "costheta": [], "K": [], "t": []
     }
     # endregion data
+
     # region func
+    # region def control_throttle(throttle_pedal):
+    #     global throttle
+    #     max_throttle_change_rate = 0.001
+    #     if throttle_pedal == 0:
+    #         throttle = 0
+    #     elif throttle_pedal > throttle:
+    #         throttle += min(max_throttle_change_rate, throttle_pedal - throttle)
+    #     else:
+    #         throttle -= min(max_throttle_change_rate, throttle - throttle_pedal)
+    #     return throttle
+    # endregion
+
     def control_alpha(target_alpha):
         global alpha
         max_alpha_increase_rate = np.deg2rad(0.5)
-
         if target_alpha > alpha:
             alpha += min(max_alpha_increase_rate, target_alpha - alpha)
         elif target_alpha < alpha:
             alpha -= min(max_alpha_increase_rate, alpha - target_alpha)
-
         return alpha
 
-    def control_throttle(throttle_pedal):
-        global throttle
-        max_throttle_change_rate = 0.1
+    def air_mass_flow_rate(y, v):
+        return density(y) * F0 * v
 
-        if throttle_pedal == 0:
-            throttle = 0
-        elif throttle_pedal > throttle:
-            throttle += min(max_throttle_change_rate, throttle_pedal - throttle)
-        else:
-            throttle -= min(max_throttle_change_rate, throttle - throttle_pedal)
+    def fuel_mass_flow_rate(y, v, throttle):
+        # fuel_kerosene_ratio = 14.7         # Стехеометрический коэффициент для 1 керосин/ 14.7 воздух
+        fuel_ratio_h2 = 8         # Стехеометрический коэффициент для 1 водород надо 8 кислорода
+        co2 = 0.21
+        # mfr = air_mass_flow_rate(y, v) / fuel_kerosene_ratio * throttle
+        mfr = co2 * air_mass_flow_rate(y, v) / fuel_ratio_h2 * throttle
+        return mfr
 
-        return throttle
-
-    def engine_power(throttle):
-        max_thrust = 30000
-        return throttle * max_thrust
-
-    def air_mass_flow_rate(altitude, v):
-        return density(altitude) * A0 * v
-
-    def fuel_mass_flow_rate(altitude, v, throttle):
-        fuel_ratio = 14.7         # Стехеометрический коэффициент для керосин/воздух
-        # fuel_ratio = 34         # Стехеометрический коэффициент для водород/воздух
-        # fuel_ratio = 8         # Стехеометрический коэффициент для водород/кислород
-        return air_mass_flow_rate(altitude, v) / fuel_ratio * throttle
-
-    def thrust(altitude, v, m, throttle):
-        mach_ratio = (v / a) / 12
-        thrust_ref = engine_power(throttle)
-        gffuel = fuel_mass_flow_rate(altitude, v, throttle)
-        thrust_xx = (gffuel * thrust_ref) * mach_ratio
+    def thrust(y, v, m, throttle):
+        spec_g = 4000 * g
+        mach_ratio = 5 / (v / a)
         if m > mha and v > 2 * a:
-            if thrust_xx > 50000:
-                thrust = 50000
-            else:
-                thrust = thrust_xx
+            return fuel_mass_flow_rate(y, v, throttle) * spec_g * mach_ratio
         else:
-            thrust = 0
+            return 0
 
-        return thrust
-
-    def drag(altitude, v):
-        if v > 6 * a:
-            drag_coefficient = 0.2
+    def drag(y, v):
+        mach = v / a
+        if mach >= 2:
+            Cd = 0.32
+        elif mach >= 3:
+            Cd = 0.28
+        elif mach >= 4:
+            Cd = 0.25
+        elif mach >= 5:
+            Cd = 0.24
+        elif mach >= 6:
+            Cd = 0.22
+        elif mach >= 7:
+            Cd = 0.2
+        elif mach >= 8:
+            Cd = 0.2
         else:
-            drag_coefficient = 0.4
-        return .5 * A0 * drag_coefficient * density(altitude) * v ** 2
+            Cd = 0.42
+        return .5 * F0 * Cd * density(y) * v ** 2
 
-    def lift(altitude, v, alpha):
-        lift_coefficient = 0.65
+    def lift(y, v, alpha):
+        if alpha == 0:
+            lift_coefficient = 0
+        else:
+            lift_coefficient = 0.5
         # if alpha == 0:
         #     lift_coefficient = 0
         # else:
         #     lift_coefficient = 0.6
-        return (.5 * Afin * lift_coefficient * density(altitude) * v ** 2)
+        return (.5 * Ffin * lift_coefficient * density(y) * v ** 2)
 
     def specific_impulse(y, v, m):
-        T = thrust(y, v, m, throttle)
+        P = thrust(y, v, m, throttle)
         g_fuel = fuel_mass_flow_rate(y, v, throttle) * g
-        return T / g_fuel if T > 0 and g_fuel > 0 else 0
+        return P / g_fuel if P > 0 and g_fuel > 0 else 0
 
     def calculate_derivatives(t, x, y, v, theta, m, alpha, throttle):
         P = thrust(y, v, m, throttle)
         Drag = drag(y, v)
         Lift = lift(y, v, alpha)
         g_fuel = fuel_mass_flow_rate(y, v, throttle)
+        v_sq = (m * np.float64(v) ** 2 * np.cos(theta)) / (Radius + y)
 
         dxdt = (v * np.cos(theta) * Radius) / (Radius + y)
         dydt = v * np.sin(theta)
         dvdt = (P * np.cos(alpha) - Drag - (m * g * np.sin(theta))) / m
-
-        v_sq = (m * np.float16(v) ** 2 * np.cos(theta)) / (Radius + y)
         dthetadt = (P * np.sin(alpha) + Lift - m * g * np.cos(theta) + v_sq) / (m * v)
         dmdt = -g_fuel
-
         return dxdt, dydt, dvdt, dthetadt, dmdt
 
     def runge_kutta_step(t, dt, x, y, v, theta, m, alpha, throttle):
-        """
-        Выполняет один шаг метода Рунге-Кутты четвертого порядка точности
-        для численного решения дифференциальных уравнений.
-
-        :param t: Текущее время.
-        :param dt: Величина шага времени.
-        :param x: Текущая горизонтальная координата.
-        :param y: Текущая вертикальная координата.
-        :param v: Текущая скорость.
-        :param theta: Текущий угол наклона траектории.
-        :param m: Текущая масса.
-        :param alpha: Текущий угол атаки.
-        :param throttle: Уровень нажатия на педаль управления тягой.
-        :return: Новые значения горизонтальной координаты, вертикальной координаты, скорости, угла наклона и массы.
-        """
         k1_x, k1_y, k1_v, k1_theta, k1_m = calculate_derivatives(t, x, y, v, theta, m, alpha, throttle)
         k2_x, k2_y, k2_v, k2_theta, k2_m = calculate_derivatives(t + dt / 2,
                                                                  x + k1_x * dt / 2,
@@ -157,139 +149,115 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha,
         y = y + dt * (k1_y + 2 * k2_y + 2 * k3_y + k4_y) / 6
         v = v + dt * (k1_v + 2 * k2_v + 2 * k3_v + k4_v) / 6
         theta = theta + dt * (k1_theta + 2 * k2_theta + 2 * k3_theta + k4_theta) / 6
-
         if m > mha:
             m = m + dt * (k1_m + 2 * k2_m + 2 * k3_m + k4_m) / 6
         else:
             m = mha
-
         return x, y, v, theta, m
     # endregion func
 
-    def engine_control(engine_duration_limit, alpha_engine, target_throttle, engine):
-        global engine_duration
-
-        target_alpha = np.deg2rad(alpha_engine)
-        dt = 0.01
-        if engine:
-            if engine_duration >= engine_duration_limit:
-                engine = False
-                engine_duration = 0
-            else:
-                engine_duration += dt
-        else:
-            if dt < 0.1:
-                engine = True
-                engine_duration = 0
-            target_throttle = 0
-
-        return target_alpha, target_throttle, engine, engine_duration
-
     while y > 0 and t < t_end:
         # region equations
-        thrust_value = thrust(y, v, m, throttle)
-        d = drag(y, v)
-        l = lift(y, v, alpha)
-        weight = m * g
-        acceleration = thrust_value / weight
-
-        tw_ratio = thrust_value / weight
-        dw_ratio = d / weight
-        lw_ratio = l / weight # нормальная переггрузка когда = 1 => горизонт полет
-
-        nxa = (thrust_value * np.cos(alpha) - d) / weight
-        nya = (thrust_value * np.sin(alpha) + l) / weight
-        costheta = np.cos(theta)
+        P = thrust(y, v, m, throttle)
+        W = m * g
+        D = drag(y, v)
+        L = lift(y, v, alpha)
+        A = P / W
+        Nx = (P - D) / W
+        Ny = L / W
+        K = 0
+        PK = 0
         # endregion equations
 
         # region Баллистическая траектория
-        # if t != 0 and theta > 0:
+        # target_alpha = 0
+        # throttle = 1
+        # endregion
+
+        # region Рикошетирующая траектория КОГДА ДЕЛАЛ ГОРИЗОНТ ПОМЕНЯЛ КОЭФФИЦИЕНТ ОПДЬЕМНОЙ С НУЛЯ ДО 6 В САМОЙ ФУНКЦИИ
+        # if D != 0:
+        #     K = L / D
+        # if K != 0:
+        #     PK = W / K
+
+        # if t < 20:
         #     target_throttle = 1
         #     target_alpha = 0
-        #     engine_duration_limit = 250
-        #     engine = True
         # else:
-        #     engine = False
-        # endregion
-
-        # region Начальный запуск
-        if t < 20:
-            target_throttle = 1
-            target_alpha = 0
-            engine_duration_limit = 20
-            engine = True
-        else:
-            engine = False
-        # endregion
-
-        # Точка перегиба?? и переход к Рикошету или Горизонт
-
-        # region Рикошетирующая траектория
-        if t > 20 and y < 50000:
-            if l>1:
-                target_throttle = 0.6
-                target_alpha = 6
-                engine_duration_limit = 20
-                engine = True
-            elif lw_ratio == 1:
-                target_throttle = 0.3
-                target_alpha = 0
-                engine_duration_limit = 20
-                engine = True
-            else:
-                target_alpha = 0
-                engine = False
-        # endregion
+        #     if y < 50000:
+        #         if theta < np.deg2rad(5) and Ny != 0:
+        #             target_alpha = np.deg2rad(6.5)
+        #             target_throttle = 1
+        #         elif theta > np.deg2rad(5) and Ny != 0:
+        #             target_alpha = np.deg2rad(0)
+        #             target_throttle = 0
+        #         elif Ny == 0:
+        #             target_alpha = np.deg2rad(4)
+        #             target_throttle = 0.6
+        #         else:
+        #             target_alpha = np.deg2rad(0)
+        #             target_throttle = 0
+        # endregion Рикошетирующая траектория
 
         # region Горизонтальная траектория
-        # if t > 20:
-        #     if y < 50000 and theta < np.deg2rad(20):
-        #         target_throttle = 0.4
-        #         target_alpha = 6
-        #         engine = True
-        #     else:
-        #         engine = False
-        # endregion Горизонтальная траектория
+        if D != 0:
+            K = L / D
+        if K != 0:
+            PK = W / K
 
-        target_alpha, target_throttle, engine, engine_duration = engine_control(
-            engine_duration_limit,
-            target_alpha,
-            target_throttle,
-            engine)
+        if theta <= np.deg2rad(0.02):
+            target_alpha = 6.5
+        else:
+            target_alpha = 0
 
-        # if engine_duration >= 20:
-        #     engine = False
+        if t < 50:
+            throttle = min(1, throttle + 0.2)
+            # target_alpha = 0
+        else:
+            if y < 50000 and theta < np.deg2rad(50):
+                # Проверяем условие равенства подъемной силы к весу ЛА
+                if Ny == 1:
+                    throttle = min(1, throttle + 0.001)
+                    # Проверяем условие текущей силы тяги к силе сопротивления
+                    if P < D:
+                        throttle = min(1, throttle + 0.0001)
+                    elif P > D:
+                        throttle = max(0, throttle - 0.0001)
+                else:
+                    if Ny < 1:
+                        throttle = min(1, throttle + 0.0001)
+                    elif Ny > 1:
+                        throttle = max(0, throttle - 0.0001)
+            else:
+                throttle = 0
+        # endregion
 
-        throttle = control_throttle(target_throttle)
         alpha = control_alpha(target_alpha)
+        # throttle = control_throttle(target_throttle)
         x, y, v, theta, m = runge_kutta_step(t, dt, x, y, v, theta, m, alpha, throttle)
         #region Добавляем данные каждой итерации в массив data
         data["x"].append(x/1000)
         data["y"].append(y/1000)
-        data["v"].append(v)
+        data["v"].append(v/a)
+        data["m"].append(m)
         data["theta"].append(np.rad2deg(theta))
         data["alpha"].append(np.rad2deg(alpha))
-        data["m"].append(m)
-        data["weight"].append(weight/1000)
-        data["Thrust"].append(thrust(y, v, m, throttle)/1000)
-        data["Drag"].append(d/1000)
-        data["Lift"].append(l/1000)
-        data["dw_ratio"].append(dw_ratio)
-        data["lw_ratio_normal"].append(lw_ratio)
-        data["tw_ratio"].append(tw_ratio)
-        data["acceleration"].append(acceleration)
+        data["weight"].append(W/1000)
+        data["Thrust"].append(P/1000)
+        data["Thrust_req"].append(PK/100)
         data["specificImpulse"].append(specific_impulse(y, v, m))
+        data["acceleration"].append(A)
+        data["Drag"].append(D/1000)
+        data["Lift"].append(L/1000)
         data["air_mass_flow_rate"].append(air_mass_flow_rate(y, v))
         data["fuel_mass_flow_rate"].append(fuel_mass_flow_rate(y, v, throttle))
-        data["throttle"].append(throttle*10)
-        data["costheta"].append(costheta)
-        data["nxa"].append(nxa)
-        data["nya"].append(nya)
-
+        data["nx"].append(Nx)
+        data["ny"].append(Ny)
+        data["throttle"].append(throttle*100)
+        data["K"].append(K)
         data["t"].append(t)
         #endregion
-        t += dt  # Обновляем время
-
+        t += dt
     return data
 
 # region plots
@@ -298,28 +266,27 @@ def plot_data(data):
 
     # Определение параметров для добавления на график
     traces = [
-        ("t", "x", "Положение по оси X, км"),
-        ("t", "y", "Положение по оси Y, км"),
-        ("t", "v", "Скорость, м/с"),
+        ("t", "x", "Дальность, км"),
+        ("t", "y", "Высота, км"),
+        ("t", "v", "Скорость, мах"),
         ("t", "m", "Масса, кг"),
+        ("t", "theta", "Угол Накл. Тр., гр."),
+        ("t", "alpha", "Угол атаки, гр."),
         ("t", "weight", "Вес, кН"),
-        ("t", "acceleration", "Ускорение, м/с²"),
-        ("t", "theta", "θ, градусы"),
-        ("t", "nxa", "nxa"),
-        ("t", "nya", "nya"),
-        ("t", "costheta", "costheta"),
-        ("t", "alpha", "Угол атаки, градус"),
         ("t", "Thrust", "Сила тяги, кН"),
-        ("t", "Drag", "Сила сопротивления, кН"),
+        ("t", "specificImpulse", "Уд. импульс, с"),
+        ("t", "acceleration", "Ускорение, м/с²"),
+        ("t", "Drag", "Сила сопр., кН"),
         ("t", "Lift", "Подъемная сила, кН"),
-        ("t", "air_mass_flow_rate", "Расход воздуха, кг/с"),
-        ("t", "fuel_mass_flow_rate", "Расход топлива, кг/с"),
-        ("t", "specificImpulse", "Удельный импульс, с"),
+        ("t", "air_mass_flow_rate", "Расход возд., кг/с"),
+        ("t", "fuel_mass_flow_rate", "Расход топл., кг/с"),
+        ("t", "Thrust_req", "Потребная СТ, кН"),
+        ("t", "nx", "Прод-ая перегрузка"),
+        ("t", "ny", "Норм-ая перегрзука"),
+        # ("t", "DW", "DW"),
         ("t", "throttle", "Throttle"),
-        ("t", "tw_ratio", "TW"),
-        ("t", "dw_ratio", "DW"),
-        ("t", "lw_ratio_normal", "LW"),
-        ("x", "y", "Траектория полета")
+        # ("t", "costheta", "costheta"),
+        ("x", "y", "Траектория")
     ]
 
     # Список цветов для линий, превышающих средний X
@@ -340,22 +307,34 @@ def plot_data(data):
         title=dict(
             text="<b>Данные полета ЛА</b>",
             x=0.5,  # Выравнивание заголовка по центру
-            y=0.9,  # Смещение заголовка по вертикали (чуть ниже)
+            y=0.98,  # Смещение заголовка по вертикали (чуть ниже)
             font=dict(
+                family='Arial Black',
+                size=16,
                 color='black'  # Установка цвета заголовка
             )
+        ),
+        margin=dict(
+            t=45,  # Верхний отступ (поднимает график)
+            b=25,  # Нижний отступ
+            l=30,
+            r=30,
+            pad=0
         ),
         xaxis=dict(
             title=dict(
                 text="<b>Время, с</b>",
                 font=dict(
-                    size=14,
-                    color='black')),
+                    size=16,
+                    family='Arial Black',
+                    color='black'
+                )
+            ),
             tickfont=dict(
-                size=14,
+                size=16,
                 family='Arial Black',
                 color='black'),
-            title_font=dict(size=14),
+            title_font=dict(size=16),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
             ticklen=5,  # Отступ между значением тика и самим тиком
@@ -367,13 +346,14 @@ def plot_data(data):
             title=dict(
                 text="<b>Значение</b>",
                 font=dict(
-                    size=14,
+                    size=16,
+                    family='Arial Black',
                     color='black')),
             tickfont=dict(
-                size=14,
+                size=16,
                 family='Arial Black',
                 color='black'),
-            title_font=dict(size=14),
+            title_font=dict(size=16),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
             ticklen=5,  # Отступ между значением тика и самим тиком
@@ -383,12 +363,12 @@ def plot_data(data):
             linewidth=1  # Толщина линии оси
         ),
         width=1000,
-        height=500,
+        height=590,
         showlegend=True,
         legend=dict(
-            font=dict(size=15, family='Arial', color='black'),
-            x=1.01,  # Adjust as needed
-            y=0.5,  # Adjust as needed
+            font=dict(size=14, family='Arial Black', color='black'),
+            x=1.02,  # Adjust as needed
+            y=0.535,  # Adjust as needed
             xanchor='left',
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.7)',  # Adjust the background color and opacity
@@ -427,7 +407,8 @@ def plot_all_trajectories(all_sim_data):
         alpha = sim_info["Alpha"]
         alt = sim_info["Altitude"]
         vel = sim_info["vel"]
-        label = f"θ: {theta}, a:{alpha} H: {alt/1000}, V: {vel/a}"
+        label = f"θ={theta:.2f}°, α={alpha:.0f}°, H={alt/1000:.0f}, V={vel/a:.0f}"
+        # label = f"θ={theta:.2f}"
 
         # Определение цвета в зависимости от значения X
         # color = 'black' if simulation_data["x"][-1] >= mean_x else 'gray'
@@ -451,22 +432,34 @@ def plot_all_trajectories(all_sim_data):
         title=dict(
             text="<b>Дальность полета: сравнительный анализ моделирования</b>",
             x=0.5,  # Выравнивание заголовка по центру
-            y=0.9,  # Смещение заголовка по вертикали (чуть ниже)
+            y=0.98,  # Смещение заголовка по вертикали (чуть ниже)
             font=dict(
+                family='Arial Black',
+                size=16,
                 color='black'  # Установка цвета заголовка
             )
+        ),
+        margin=dict(
+            t=45,  # Верхний отступ (поднимает график)
+            b=25,  # Нижний отступ
+            l=30,
+            r=30,
+            pad=0
         ),
         xaxis=dict(
             title=dict(
                 text="<b>Дальность полета, км</b>",
                 font=dict(
-                    size=14,
-                    color='black')),
+                    size=16,
+                    family='Arial Black',
+                    color='black'
+                )
+            ),
             tickfont=dict(
-                size=14,
+                size=16,
                 family='Arial Black',
                 color='black'),
-            title_font=dict(size=14),
+            title_font=dict(size=16),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
             ticklen=12,  # Отступ между значением тика и самим тиком
@@ -479,13 +472,14 @@ def plot_all_trajectories(all_sim_data):
             title=dict(
                 text="<b>Высота полета, км</b>",
                 font=dict(
-                    size=14,
+                    size=16,
+                    family='Arial Black',
                     color='black')),
             tickfont=dict(
-                size=14,
+                size=16,
                 family='Arial Black',
                 color='black'),
-            title_font=dict(size=14),
+            title_font=dict(size=16),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
             ticklen=12,  # Отступ между значением тика и самим тиком
@@ -495,13 +489,13 @@ def plot_all_trajectories(all_sim_data):
             linewidth=1,  # Толщина линии оси
             dtick=10     # Шаг тиков
         ),
-        width=1000,
-        height=500,
+        width=1400,
+        height=700,
         showlegend=True,
         legend=dict(
-            font=dict(size=15, family='Arial', color='black'),
-            x=1.01,  # Adjust as needed
-            y=0.5,  # Adjust as needed
+            font=dict(size=14, family='Arial Black', color='black'),
+            x=1.02,  # Adjust as needed
+            y=0.535,  # Adjust as needed
             xanchor='left',
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.7)',  # Adjust the background color and opacity
@@ -522,30 +516,58 @@ def plot_data_for_best(best_sim_data):
     fig = go.Figure()
 
     traces = [
-        ("t", "x", "Положение по оси X, км"),
-        ("t", "y", "Положение по оси Y, км"),
-        ("t", "v", "Скорость, м/с"),
+        ("t", "x", "Дальность, км"),
+        ("t", "y", "Высота, км"),
+        ("t", "v", "Скорость, Мах"),
         ("t", "m", "Масса, кг"),
+        ("t", "theta", "Угол накл. тр., град."),
+        ("t", "alpha", "Угол атаки, град."),
         ("t", "weight", "Вес, кН"),
-        ("t", "acceleration", "Ускорение, м/с²"),
-        ("t", "theta", "θ, градусы"),
-        ("t", "nxa", "nxa"),
-        ("t", "nya", "nya"),
-        ("t", "costheta", "costheta"),
-        ("t", "alpha", "Угол атаки, градус"),
         ("t", "Thrust", "Сила тяги, кН"),
-        ("t", "Drag", "Сила сопротивления, кН"),
+        ("t", "specificImpulse", "Уд. импульс, сек"),
+        ("t", "acceleration", "Ускорение, м/с²"),
+        ("t", "Drag", "Сила сопр., кН"),
         ("t", "Lift", "Подъемная сила, кН"),
-        ("t", "air_mass_flow_rate", "Расход воздуха, кг/с"),
-        ("t", "fuel_mass_flow_rate", "Расход топлива, кг/с"),
-        ("t", "specificImpulse", "Удельный импульс, с"),
+        ("t", "air_mass_flow_rate", "МР воздуха, кг/с"),
+        ("t", "fuel_mass_flow_rate", "МР топлива, кг/с"),
+        ("t", "K", "---K---"),
+        ("t", "Thrust_req", "Потребная СТ, кН"),
+        ("t", "nx", "Прод-ая перегрузка"),
+        ("t", "ny", "Норм-ая перегрзука"),
+        # ("t", "DW", "DW"),
         ("t", "throttle", "Throttle"),
-        ("t", "tw_ratio", "TW"),
-        ("t", "dw_ratio", "DW"),
-        ("t", "lw_ratio_normal", "LW"),
+        # ("t", "costheta", "costheta")
     ]
-
+    # region сглаживание
+    # # Преобразование данных в DataFrame для удобного сглаживания
+    # df = pd.DataFrame(best_sim_data["SimulationData"])
+    #
+    # # Применение сглаживания для thrust и throttle
+    # window_size = 2000  # Размер окна для скользящего среднего
+    # df["Thrust_smooth"] = smooth_data(df["Thrust"], window_size)
+    # df["throttle_smooth"] = smooth_data(df["throttle"], window_size)
+    #
+    # # Список цветов для линий, превышающих средний X
+    # color_palette = plotly.colors.qualitative.Vivid
+    #
+    # # Добавление данных на график с использованием цикла
+    # for i, (x_key, y_key, name) in enumerate(traces):
+    #     color = color_palette[i % len(color_palette)]  # Подсчет цвета по индексу
+    #     if y_key == "Thrust":
+    #         y_data = df["Thrust_smooth"]
+    #     elif y_key == "throttle":
+    #         y_data = df["throttle_smooth"]
+    #     else:
+    #         y_data = df[y_key]
+    #
+    #     fig.add_trace(go.Scatter(x=df["t"],
+    #                              y=y_data,
+    #                              mode='lines',
+    #                              name=name,
+    #                              line=dict(width=3, color=color),
+    #                              hovertemplate="Время: %{x}<br>Значение: %{y}"))
     # Список цветов для линий, превышающих средний X
+    # endregion сглаживание
     color_palette = plotly.colors.qualitative.Vivid
 
     # Добавление данных на график с использованием цикла
@@ -563,22 +585,34 @@ def plot_data_for_best(best_sim_data):
         title=dict(
             text="<b>Данные полета ЛА</b>",
             x=0.5,  # Выравнивание заголовка по центру
-            y=0.9,  # Смещение заголовка по вертикали (чуть ниже)
+            y=0.98,  # Смещение заголовка по вертикали (чуть ниже)
             font=dict(
+                family='Arial Black',
+                size=16,
                 color='black'  # Установка цвета заголовка
             )
+        ),
+        margin=dict(
+            t=45,  # Верхний отступ (поднимает график)
+            b=25,  # Нижний отступ
+            l=30,
+            r=30,
+            pad=0
         ),
         xaxis=dict(
             title=dict(
                 text="<b>Время, с</b>",
                 font=dict(
-                    size=14,
-                    color='black')),
+                    size=16,
+                    family='Arial Black',
+                    color='black'
+                )
+            ),
             tickfont=dict(
-                size=14,
+                size=16,
                 family='Arial Black',
                 color='black'),
-            title_font=dict(size=14),
+            title_font=dict(size=16),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
             ticklen=5,  # Отступ между значением тика и самим тиком
@@ -590,13 +624,14 @@ def plot_data_for_best(best_sim_data):
             title=dict(
                 text="<b>Значение</b>",
                 font=dict(
-                    size=14,
+                    size=16,
+                    family='Arial Black',
                     color='black')),
             tickfont=dict(
-                size=14,
+                size=16,
                 family='Arial Black',
                 color='black'),
-            title_font=dict(size=14),
+            title_font=dict(size=16),
             ticks="outside",
             tickformat="f",  # Настройка формата чисел на оси
             ticklen=5,  # Отступ между значением тика и самим тиком
@@ -606,12 +641,12 @@ def plot_data_for_best(best_sim_data):
             linewidth=1  # Толщина линии оси
         ),
         width=1000,
-        height=500,
+        height=590,
         showlegend=True,
         legend=dict(
-            font=dict(size=15, family='Arial', color='black'),
-            x=1.01,  # Adjust as needed
-            y=0.5,  # Adjust as needed
+            font=dict(size=14, family='Arial Black', color='black'),
+            x=1.02,  # Adjust as needed
+            y=0.535,  # Adjust as needed
             xanchor='left',
             yanchor='middle',
             bgcolor='rgba(255, 255, 255, 0.7)',  # Adjust the background color and opacity
@@ -625,18 +660,38 @@ def plot_data_for_best(best_sim_data):
         plot_bgcolor='white'    # Установка белого фона графика
     )
     # endregion Настройка макета графика
-
     fig.show()
+
+def smooth_data(data, window_size):
+    return data.rolling(window=window_size, min_periods=1).mean()
 # endregion plots
+
+def run_simulations_parallel(thetas, alphas, altitudes, machs, throttle):
+    start_time = time.time()
+    num_cores = -1  # используем все доступные ядра процессора
+    # num_cores = 4  # Ограничиваем количество ядер
+    all_simulations_data = Parallel(n_jobs=num_cores)(
+        delayed(simulate_one)(alt, mach, theta, alpha, throttle)
+        for alt, mach, theta, alpha in product(altitudes, machs, thetas, alphas)
+    )
+    end_time = time.time()
+    total_time_minutes = (end_time - start_time) / 60
+    # Найдем лучшую симуляцию
+    max_x = float('-inf')
+    best_sim_data = None
+    for sim_data in all_simulations_data:
+        if sim_data["X"] > max_x:
+            max_x = sim_data["X"]
+            best_sim_data = sim_data
+    return all_simulations_data, best_sim_data, total_time_minutes
 
 def simulate_one(alt, mach, theta, alpha, throttle):
     vel = mach * a
     simulation_data = simulation(
-        0.0, 1500, 0.01,
-        0, alt, vel, np.deg2rad(theta), np.deg2rad(alpha), False,
-        1800, 1000, throttle,
-        0.3, 0.5)
-
+        0.0, 2000, 0.01,
+        0, alt, vel, np.deg2rad(theta), np.deg2rad(alpha),
+        1500, 500,
+        0.2, 0.5, throttle)
     last_x = simulation_data["x"][-1]
     return {
         "Theta": theta,
@@ -647,58 +702,52 @@ def simulate_one(alt, mach, theta, alpha, throttle):
         "SimulationData": simulation_data
     }
 
-def run_simulations_parallel(thetas, alphas, altitudes, machs, throttle):
-    start_time = time.time()
-
-    num_cores = -1  # используем все доступные ядра процессора
-    # num_cores = 4  # Ограничиваем количество ядер
-    all_simulations_data = Parallel(n_jobs=num_cores)(
-        delayed(simulate_one)(alt, mach, theta, alpha, throttle)
-        for alt, mach, theta, alpha in product(altitudes, machs, thetas, alphas)
-    )
-
-    end_time = time.time()
-    total_time_seconds = end_time - start_time
-    total_time_minutes = total_time_seconds / 60
-
-    # Найдем лучшую симуляцию
-    max_x = float('-inf')
-    best_sim_data = None
-    for sim_data in all_simulations_data:
-        if sim_data["X"] > max_x:
-            max_x = sim_data["X"]
-            best_sim_data = sim_data
-
-    return all_simulations_data, best_sim_data, total_time_minutes
-
 if __name__ == '__main__':
-    # region Константы
-    g = 9.8  # Ускорение свободного падения, м/с²
-    Radius = 6371000  # Радиус Земли, м
-    a = 331  # Скорость звука, м/с
-    pi = 3.141592653589793  # Число Пи
+    current_datetime = datetime.now()
+    date_string = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
     throttle = 0
     alpha = 0
-    engine_duration = 0
-    # endregion
-    # sim = False
     sim = True
     if sim:
-        # # Начальные диапазоны данных для Баллистической
-        # thetas = np.arange(15, 50, 5)
+        # Начальные диапазоны данных для Баллистической
+        # region Тест 1 Влияние ВЫСОТЫ и УНТ
         # alphas = np.arange(0, 1, 1)
-        # altitudes = np.arange(5000, 20000, 5000)
-        # machs = np.arange(4, 5, 1)
-        # # Начальные диапазоны данных для Рикошетирующей
-        thetas = np.arange(15, 50, 4)
+        # machs = np.arange(3, 4, 1)
+        # altitudes = np.arange(2000, 22000, 5000)
+        # thetas = np.arange(20, 50, 2)
+        # F0 = 0.1
+        # Fs = 0.5
+        # m = 1500/500
+
+        # region Тест 2 Влияние УНТ
+        # alphas = np.arange(0, 1, 1)
+        # machs = np.arange(3, 4, 1)
+        # altitudes = np.arange(2000, 3000, 2000)
+        # thetas = np.arange(25, 35, 0.5)
+        # Тест 4 Влияние МАХОВ
+        # Тест 5 Влияние F0
+
+        # Начальные диапазоны данных для Рикошетирующей
+        # region Тест 1 Влияние ВЫСОТЫ
         alphas = np.arange(0, 1, 1)
-        altitudes = np.arange(5000, 20000, 8000)
-        machs = np.arange(4, 5, 1)
-        # # Начальные диапазоны данных для Горизонтальной
-        # thetas = np.arange(15, 50, 5)
-        # alphas = np.arange(0, 1, 1)
-        # altitudes = np.arange(5000, 20000, 5000)
-        # machs = np.arange(4, 5, 1)
+        machs = np.arange(3, 4, 1)
+        altitudes = np.arange(2000, 16000, 6000)
+        thetas = np.arange(0, 50, 7)
+        # Тест 2 Влияние УНТ
+        # Тест 3 Влияние УА
+        # Тест 4 Влияние МАХОВ
+        # Тест 5 Влияние F0
+        # Тест 6 Влияние K
+        # F0 = 0.1
+        # K = ?
+
+        # Начальные диапазоны данных для Горизонтальной
+        # Тест 1 Влияние ВЫСОТЫ
+        # Тест 2 Влияние УНТ
+        # Тест 3 Влияние УА
+        # Тест 4 Влияние МАХОВ
+        # Тест 5 Влияние F0
+        # Тест 6 Влияние K
 
         print(f"Количество симуляций: {len(list(product(thetas, alphas, altitudes, machs)))}")
 
@@ -706,14 +755,11 @@ if __name__ == '__main__':
             thetas, alphas, altitudes, machs, throttle)
         print(f"Количество симуляций: {len(all_sim_data_parallel)}, общее время: {total_time_minutes:.2f} минут")
         plot_all_trajectories(all_sim_data_parallel)
-
-        if best_sim_data is not None:
-            plot_data_for_best(best_sim_data)
-        else:
-            print("Ни одна из симуляций не завершилась успешно.")
+        plot_data_for_best(best_sim_data)
     else:
         modeling = simulation(0.0, 2000, 0.01,
-                           0, 5000, 4 * a, np.deg2rad(35), np.deg2rad(0), False,
-                           1800, 1000, throttle,
-                           0.3, 0.5)
+                              0, 5000, 4 * a,
+                              np.deg2rad(35), np.deg2rad(0),
+                              1800, 1000,
+                              0.3, 0.5, throttle)
         plot_data(modeling)
