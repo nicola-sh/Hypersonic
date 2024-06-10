@@ -64,7 +64,7 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha,
         return mfr
 
     def thrust(y, v, m, throttle):
-        spec_g = 4000 * g
+        spec_g = 4000
         mach_ratio = 5 / (v / a)
         if m > mha and v > 2 * a:
             return fuel_mass_flow_rate(y, v, throttle) * spec_g * mach_ratio
@@ -104,7 +104,7 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha,
 
     def specific_impulse(y, v, m):
         P = thrust(y, v, m, throttle)
-        g_fuel = fuel_mass_flow_rate(y, v, throttle) * g
+        g_fuel = fuel_mass_flow_rate(y, v, throttle)
         return P / g_fuel if P > 0 and g_fuel > 0 else 0
 
     def calculate_derivatives(t, x, y, v, theta, m, alpha, throttle):
@@ -175,61 +175,61 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha,
         # endregion
 
         # region Рикошетирующая траектория КОГДА ДЕЛАЛ ГОРИЗОНТ ПОМЕНЯЛ КОЭФФИЦИЕНТ ОПДЬЕМНОЙ С НУЛЯ ДО 6 В САМОЙ ФУНКЦИИ
-        # if D != 0:
-        #     K = L / D
-        # if K != 0:
-        #     PK = W / K
-
-        # if t < 20:
-        #     target_throttle = 1
-        #     target_alpha = 0
-        # else:
-        #     if y < 50000:
-        #         if theta < np.deg2rad(5) and Ny != 0:
-        #             target_alpha = np.deg2rad(6.5)
-        #             target_throttle = 1
-        #         elif theta > np.deg2rad(5) and Ny != 0:
-        #             target_alpha = np.deg2rad(0)
-        #             target_throttle = 0
-        #         elif Ny == 0:
-        #             target_alpha = np.deg2rad(4)
-        #             target_throttle = 0.6
-        #         else:
-        #             target_alpha = np.deg2rad(0)
-        #             target_throttle = 0
-        # endregion Рикошетирующая траектория
-
-        # region Горизонтальная траектория
         if D != 0:
             K = L / D
         if K != 0:
             PK = W / K
 
-        if theta <= np.deg2rad(0.02):
-            target_alpha = 6.5
-        else:
-            target_alpha = 0
-
-        if t < 50:
+        if t < 20:
             throttle = min(1, throttle + 0.2)
-            # target_alpha = 0
+            target_alpha = 0
         else:
-            if y < 50000 and theta < np.deg2rad(50):
-                # Проверяем условие равенства подъемной силы к весу ЛА
-                if Ny == 1:
+            if y < 50000:
+                if theta < np.deg2rad(5) and Ny != 0:
+                    target_alpha = 6.5
+                    throttle = min(1, throttle + 0.2)
+                elif theta > np.deg2rad(5) and Ny != 0:
+                    target_alpha = 0
+                    throttle = max(0, throttle - 0.0001)
+                elif Ny == 0:
+                    target_alpha = 4
                     throttle = min(1, throttle + 0.001)
-                    # Проверяем условие текущей силы тяги к силе сопротивления
-                    if P < D:
-                        throttle = min(1, throttle + 0.0001)
-                    elif P > D:
-                        throttle = max(0, throttle - 0.0001)
                 else:
-                    if Ny < 1:
-                        throttle = min(1, throttle + 0.0001)
-                    elif Ny > 1:
-                        throttle = max(0, throttle - 0.0001)
-            else:
-                throttle = 0
+                    target_alpha = 0
+                    throttle = max(0, throttle - 0.0001)
+        # endregion Рикошетирующая траектория
+
+        # region Горизонтальная траектория
+        # if D != 0:
+        #     K = L / D
+        # if K != 0:
+        #     PK = W / K
+        #
+        # if theta <= np.deg2rad(0.02):
+        #     target_alpha = 6.5
+        # else:
+        #     target_alpha = 0
+        #
+        # if t < 50:
+        #     throttle = min(1, throttle + 0.2)
+        #     # target_alpha = 0
+        # else:
+        #     if y < 50000 and theta < np.deg2rad(50):
+        #         # Проверяем условие равенства подъемной силы к весу ЛА
+        #         if Ny == 1:
+        #             throttle = min(1, throttle + 0.001)
+        #             # Проверяем условие текущей силы тяги к силе сопротивления
+        #             if P < D:
+        #                 throttle = min(1, throttle + 0.0001)
+        #             elif P > D:
+        #                 throttle = max(0, throttle - 0.0001)
+        #         else:
+        #             if Ny < 1:
+        #                 throttle = min(1, throttle + 0.0001)
+        #             elif Ny > 1:
+        #                 throttle = max(0, throttle - 0.0001)
+        #     else:
+        #         throttle = 0
         # endregion
 
         alpha = control_alpha(target_alpha)
