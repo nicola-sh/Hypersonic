@@ -56,14 +56,50 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
     def fuel_mass_flow_rate(y, v, throttle):
         fuel_kerosene_ratio = 14.7         # Стехеометрический коэффициент для 1 керосин/ 14.7 воздух
         mfr = air_mass_flow_rate(y, v) / fuel_kerosene_ratio * throttle
+
+        # fuel_ratio_h2 = 34.5         # Стехеометрический коэффициент для 1 водород надо 34 air
+        # mfr = air_mass_flow_rate(y, v) / fuel_ratio_h2 * throttle
+        # fuel_ratio_h2 = 7.5         # Стехеометрический коэффициент для 1 водород надо 8 кислорода
+        # co2 = 0.21
+        # mfr = co2 * air_mass_flow_rate(y, v) / fuel_ratio_h2 * throttle
         return mfr
 
     def thrust(y, v, m, throttle, theta):
         mach = v / a
         mf = fuel_mass_flow_rate(y, v, throttle)
         ma = air_mass_flow_rate(y, v)
+
+        # heat_of_combustion_kerosene = 43e6  # J/kg (43 MJ/kg)
+        # efficiency = 0.6  # Assuming 40% efficiency
+        # Cp = 2010 # capacity heat kerosene
+        # Cp = 15000 #h2
+
+        # if ma > 0 and mf > 0:
+        #     f = mf / ma
+        # else:
+        #     f = 0
+
+        # thrust = fuel_mass_flow_rate(y, v, throttle) * 280 * g * mach_ratio
+        # thrust = ma * v * (np.sqrt(1 + f)*np.sqrt(1+(f*qr/Cp*alt*temperature(y)))-1)
+        # thrust =  ma * 480 * mach_ratio# керосин
+        # thrust =  ma * 580 # водород
+        # thrust = mf * spec_g * mach_ratio
+        # gamma = 1.3  # Specific heat ratio for air
+        # LHV = 42850e3  # Lower heating value of kerosene in J/kg
+        # cp = 1005  # Specific heat capacity at constant pressure for air in J/(kg·K)
+        # T_air = temperature(y)
+        # P_air = pressure(y)
+        # L = 14.7
         if m > mha and v > 2 * a and mf > 0:
+            # T_e = T_air + LHV / (L * cp)
+            # # P_e = P_air * (T_e / T_air) ** (gamma / (gamma - 1))
+            # v_e = (2 * cp * (T_e - temperature(y))) ** 0.5
+            # # tR = (ma / g) * v * (((T_e / T_air)**0.5)-1)
+            # tR = (ma+mf) * (0.95*v_e - v)
+            # return ma * (0.7 * v_e - v) + F0*1*(P_e-P_air)
+            # return tR
             return (throttle * mf * 6100) * (mach / 3.5)
+            # return (throttle * mf * 12000) * (mach / 4)
         else:
             return 0
 
@@ -115,6 +151,7 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         # if y >= 40:
         #     Cl = 0
         return (.5 * Ffin * Cl * density(y) * v ** 2)
+
 
     def calculate_derivatives(t, x, y, v, theta, m, alpha, throttle):
         P = thrust(y, v, m, throttle, theta)
