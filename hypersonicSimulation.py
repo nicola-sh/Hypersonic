@@ -7,7 +7,6 @@ from isa import density, temperature, pressure
 from itertools import product
 from joblib import Parallel, delayed
 from datetime import datetime
-
 # region Константы
 g = 9.8                 # Ускорение свободного падения, м/с²
 Radius = 6371000        # Радиус Земли, м
@@ -17,6 +16,23 @@ pi = 3.141592653589793  # Число Пи
 
 def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
                m, mf, F0, Ffin, throttle):
+    """
+    Проводит симуляцию движения объекта в атмосфере.
+    :param t: Текущее время симуляции.
+    :param t_end: Конечное время симуляции.
+    :param dt: Шаг времени симуляции.
+    :param x: Позиция объекта по оси X.
+    :param y: Позиция объекта по оси Y.
+    :param v: Скорость объекта.
+    :param theta: Угол наклона объекта относительно горизонтали.
+    :param alpha: Угол атаки объекта.
+    :param engine: Переменная, указывающая, работает ли двигатель объекта.
+    :param m: Масса объекта.
+    :param mha: Минимальная масса объекта, при которой двигатель может работать.
+    :param mf: Масса топлива.
+    :param throttle: Уровень управления тягой.
+    :param A0: Площадь поперечного сечения прямоточного ракетного двигателя.
+    """
     # region data
     mha = m - mf
     data = {
@@ -29,8 +45,13 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         "nx": [], "ny": [], "costheta": [], "K": [], "t": []
     }
     # endregion data
-
+    # region func
     def control_throttle(throttle_pedal):
+        """
+        Изменяет тягу постепенно в соответствии с педалью управления тягой.
+        :param throttle_pedal: Уровень "нажатия педали" управления тягой.
+        :return: Уровень тяги после изменения.
+        """
         global throttle
         max_throttle_change_rate = 0.001
         if throttle_pedal == 0:
@@ -42,6 +63,11 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         return throttle
 
     def control_alpha(target_alpha):
+        """
+        Изменяет угол атаки постепенно, приближая его к целевому значению.
+        :param target_alpha: Целевой угол атаки в радианах.
+        :return: Текущий угол атаки в радианах после изменения.
+        """
         global alpha
         max_alpha_increase_rate = np.deg2rad(0.5)
         if target_alpha > alpha:
@@ -51,28 +77,62 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         return alpha
 
     def air_mass_flow_rate(y, v):
+        """
+        Рассчитывает массовый расход воздуха через прямоточный ракетный двигатель.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :return: Массовый расход воздуха через прямоточный ракетный двигатель, кг/с.
+        """
         return density(y) * F0 * v
 
     def fuel_mass_flow_rate(y, v, throttle):
+        """
+        Рассчитывает массовый расход топлива через прямоточный ракетный двигатель.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :param throttle: Уровень нажатия на педаль управления тягой.
+        :return: Массовый расход топлива через прямоточный ракетный двигатель, кг/с.
+        """
         fuel_kerosene_ratio = 14.7         # Стехеометрический коэффициент для 1 керосин/ 14.7 воздух
         mfr = air_mass_flow_rate(y, v) / fuel_kerosene_ratio * throttle
         return mfr
 
     def thrust(y, v, m, throttle, theta):
+        """
+        Рассчитывает силу тяги прямоточного ракетного двигателя.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :param m: Масса объекта, кг.
+        :param throttle: Уровень нажатия на педаль управления тягой.
+        :return: Сила тяги ПВРД, Н.
+        """
         mach = v / a
         mf = fuel_mass_flow_rate(y, v, throttle)
         ma = air_mass_flow_rate(y, v)
         if m > mha and v > 2 * a and mf > 0:
-            return (throttle * mf * 6100) * (mach / 3.5)
+            return (mf * 6100) * (mach / 3.5)
         else:
             return 0
 
     def specific_impulse(y, v, m, theta):
+        """
+        Вычисляет удельный импульс.
+        :param y: Высота объекта, м.
+        :param v: Скорость объекта, м/с.
+        :param m: Масса объекта, кг.
+        :return: Удельный импульс.
+        """
         P = thrust(y, v, m, throttle, theta)
         g_fuel = fuel_mass_flow_rate(y, v, throttle) * g
         return P / g_fuel if P > 0 and g_fuel > 0 else 0
 
     def drag(y, v):
+        """
+        Рассчитывает силу сопротивления ПВРД.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :return: Сила сопротивления ПВРД, Н.
+        """
         mach = v / a
         if mach <= 2:
             Cd = 0.4
@@ -85,8 +145,13 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         return .5 * F0 * Cd * density(y) * v ** 2
 
     def lift(y, v, alpha, KL):
+        """
+        Рассчитывает подъемную силу ПВРД.
+        :param altitude: Высота над уровнем моря, м.
+        :param v: Скорость объекта, м/с.
+        :return: Подъемная сила ПВРД, Н.
+        """
         mach = v / a
-        # K = 1.5
         if KL == 1.5:
             if alpha == 0:
                 Cl = 0
@@ -99,8 +164,7 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
                     Cl = 0.375
                 elif mach >= 6:
                     Cl = 0.12
-        # K = 2.5
-        if KL == 2:
+        if KL == 3:
             if alpha == 0:
                 Cl = 0
             else:
@@ -131,6 +195,19 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         return dxdt, dydt, dvdt, dthetadt, dmdt
 
     def runge_kutta_step(t, dt, x, y, v, theta, m, alpha, throttle):
+        """
+        Выполняет один шаг метода Рунге-Кутты четвертого порядка точности для численного решения дифференциальных уравнений. Погрешность метода Рунге-Кутты четвертого порядка составляет приблизительно O(dt^5)
+        :param t: Текущее время.
+        :param dt: Величина шага времени.
+        :param x: Текущая горизонтальная координата.
+        :param y: Текущая вертикальная координата.
+        :param v: Текущая скорость.
+        :param theta: Текущий угол наклона траектории.
+        :param m: Текущая масса.
+        :param alpha: Текущий угол атаки.
+        :param throttle: Уровень нажатия на педаль управления тягой.
+        :return: Новые значения горизонтальной координаты, вертикальной координаты, скорости, угла наклона и массы.
+        """
         k1_x, k1_y, k1_v, k1_theta, k1_m = calculate_derivatives(t, x, y, v, theta, m, alpha, throttle)
         k2_x, k2_y, k2_v, k2_theta, k2_m = calculate_derivatives(t + dt / 2,
                                                                  x + k1_x * dt / 2,
@@ -164,10 +241,8 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
             m = mha
         return x, y, v, theta, m
     # endregion func
-
     eng_time = 0
     printed = False
-
     while y > 0 and t < t_end:
         # region equations
         P = thrust(y, v, m, throttle, theta)
@@ -186,37 +261,36 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         # throttle = 1
         # endregion
 
-        # region Рикошетирующая траектория
+        # # region Рикошетирующая траектория
         # if D != 0:
         #     K = L / D
         # if K != 0:
         #     PK = W / K
         #
-        # if t < 25:
+        # if t < 30:
         #     throttle = 1
         #     # throttle = min(0.9, throttle + 0.2)
         #     target_alpha = 0
         #     eng_time +=dt
         # else:
         #     if y < 50000:
-        #         if theta < np.deg2rad(12) and Ny != 0:
+        #         if theta < np.deg2rad(10) and Ny != 0:
         #             target_alpha = alphaX
         #             # throttle = min(0.8, throttle + 0.2)
-        #             throttle =1
+        #             throttle = 1
         #             eng_time += dt
-        #         elif theta > np.deg2rad(12) and Ny != 0:
+        #         elif theta > np.deg2rad(10) and Ny != 0:
         #             target_alpha = 0
         #             throttle = 0
         #             # throttle = max(0, throttle - 0.0001)
         #         elif Ny == 0:
         #             target_alpha = alphaX
         #             throttle = 0
-        #             # throttle = max(0, throttle - 0.0001)
+        #             throttle = max(0, throttle - 0.0001)
         #         else:
         #             target_alpha = 0
         #             throttle = 0
         # endregion Рикошетирующая траектория
-
 
         # region Горизонтальная траектория
         if D != 0:
@@ -229,7 +303,7 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
         else:
             target_alpha = 0
 
-        if t < 20:
+        if t < 30:
             throttle = 1
             eng_time += dt
             # target_alpha = 0
@@ -254,9 +328,11 @@ def simulation(t, t_end, dt, x, y, v, theta, alpha, alphaX, KL,
             else:
                 throttle = 0
         # endregion
+
         if t > 100 and printed==False:
             # print(eng_time)
             printed = True
+
         # throttle = control_throttle(target_throttle)
         # alpha = control_alpha(np.deg2rad(target_alpha))
         alpha = control_alpha(target_alpha)
@@ -416,7 +492,26 @@ def plot_all_trajectories(all_sim_data):
     min_x = min(sim_info["SimulationData"]["x"][-1] for sim_info in sorted_sim_data)
     max_x = max(sim_info["SimulationData"]["x"][-1] for sim_info in sorted_sim_data)
     # Список цветов для линий, превышающих средний X
-    color_palette = plotly.colors.qualitative.Vivid
+    custom_color_palette = [
+        "#000000",
+        "#ab1438",
+        "#fd820b",
+        "#91cec2",
+        "#e8c511",
+        "#1ea5fc",
+        "#2c6184",
+        "#5f41b2",
+        "#8b7d7d",
+        "#008000",
+        "#009B77",
+        "#3B83BD",
+        "#8962f8",
+        "#FBCEB1",
+        "#AFDAFC",
+        "#30D5C8",
+        "#000080"
+    ]
+    color_palette = plotly.colors.qualitative.Dark24
     color_index = 0
     for sim_info in sorted_sim_data:
         simulation_data = sim_info["SimulationData"]
@@ -425,16 +520,13 @@ def plot_all_trajectories(all_sim_data):
         alt = sim_info["Altitude"]
         vel = sim_info["vel"]
         K = sim_info["K"]
-        # 41
-        # label = f"θ={theta:.2f}"
-
-        # 42 43
+        # 41 42 44
+        # label = f"θ={theta:.0f}°"
+        # 43
         # label = f"θ={theta:.0f}°, H={alt/1000:.0f}км, K={K}"
+        # 45
+        label = f"θ={theta:.0f}°, K={K}"
 
-        # 44
-        label = f"θ={theta:.0f}°, H={alt/1000:.0f}км, K={K}"
-        # label = f"θ={theta:.2f}°, α={alpha:.0f}°, H={alt/1000:.0f}, V={vel/a:.0f}"
-        #
         # Определение цвета в зависимости от значения X
         # color = 'black' if simulation_data["x"][-1] >= mean_x else 'gray'
         # Определение цвета в зависимости от значения X
@@ -443,7 +535,8 @@ def plot_all_trajectories(all_sim_data):
         #     color_index += 1
         # else:
         #     color = 'black'
-        color = color_palette[color_index % len(color_palette)]
+
+        color = custom_color_palette[color_index % len(custom_color_palette)]
         color_index += 1
         normalized_x = (simulation_data["x"][-1] - min_x) / (max_x - min_x)
         # line_width = 1 + normalized_x * (3 - 1)
@@ -490,7 +583,7 @@ def plot_all_trajectories(all_sim_data):
             linecolor='gray',  # Цвет осей
             linewidth=1,  # Толщина линии оси
             # dtick=50     # Шаг тиков
-            dtick = 100  # Шаг тиков
+            dtick = 200  # Шаг тиков
         ),
         yaxis=dict(
             title=dict(
@@ -734,43 +827,39 @@ if __name__ == '__main__':
     # print((np.pi*0.25)/4)
     sim = True
     if sim:
-        # Начальные диапазоны данных Баллист
-        # 41
-        # alphas = np.arange(0, 1, 1)
-        # machs = np.arange(3, 4, 1)
+        alphas = np.arange(6, 7, 1)
+        machs = np.arange(3, 4, 1)
+
+        # Баллистическая 41 theta
         # altitudes = np.arange(2000, 3000, 1000)
-        # thetas = np.arange(30, 48, 1)
+        # K = np.arange(1.5, 2, 1)
+        # first_range = np.arange(23, 32, 1)
+        # second_range = np.arange(32, 48, 3)
+        # thetas = np.concatenate((first_range, second_range))
+
+        # Рикошетирующая 42 theta
+        # first_range = np.arange(26, 30, 1)
+        # second_range = np.arange(30, 50, 6)
+        # thetas = np.concatenate((first_range, second_range))
+        # altitudes = np.arange(2000, 3000, 1000)
         # K = np.arange(1.5, 2, 1)
 
-        # Начальные диапазоны данных Рикошет
-        # 42
-        # alphas = np.arange(6, 7, 1)
-        # machs = np.arange(3, 4, 1)
-        # altitudes = np.arange(2000, 9000, 6000)
-        # thetas = np.arange(30, 40, 5)
+        # Горизонтальная 44 theta
+        # altitudes = np.arange(2000, 3000, 1000)
+        # first_range = np.arange(23, 30, 1)
+        # second_range = np.arange(30, 48, 6)
+        # thetas = np.concatenate((first_range, second_range))
         # K = np.arange(1.5, 2, 1)
 
-        # 43
-        # alphas = np.arange(6, 7, 1)
-        # machs = np.arange(3, 4, 1)
-        # altitudes = np.arange(2000, 3000, 1000)
-        # thetas = np.arange(30, 31, 1)
-        # K = np.arange(1.5, 2.5, 0.5)
+        # Рикошет 43 thetaOPT: H and K
+        # thetas = np.arange(26, 27, 1)
+        # altitudes = np.arange(2000, 8000, 5000)
+        # K = np.arange(1.5, 3.5, 1.5)
 
-        # Начальные диапазоны данных Горизонт
-        # 44
-        # alphas = np.arange(6, 7, 1)
-        # machs = np.arange(3, 4, 1)
-        # altitudes = np.arange(2000, 3000, 1000)
-        # thetas = np.arange(25, 35, 5)
-        # K = np.arange(1.5, 2.5, 0.5)
-
-        # 45
-        # alphas = np.arange(6, 7, 1)
-        # machs = np.arange(3, 4, 1)
-        # altitudes = np.arange(2000, 9000, 7000)
-        # thetas = np.arange(24, 42, 2)
-        # K = np.arange(1.5, 2, 1)
+        # Горизонт 45 thetaOPT: H and K
+        thetas = np.arange(26, 27, 1)
+        altitudes = np.arange(2000, 3000, 1000)
+        K = np.arange(1.5, 3.5, 1.5)
 
         print(f"Количество симуляций: {len(list(product(thetas, alphas, altitudes, machs, K)))}")
 
@@ -780,7 +869,7 @@ if __name__ == '__main__':
         plot_all_trajectories(all_sim_data_parallel)
         plot_data_for_best(best_sim_data)
     else:
-        modeling = simulation(0.0, 1000, 0.01,
+        modeling = simulation(0.0, 2500, 0.01,
                               0, 2000, 3 * a,
                               np.deg2rad(30), np.deg2rad(0), np.deg2rad(0), 1.5,
                               1440, 450,
