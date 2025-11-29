@@ -1,4 +1,4 @@
-TODO:
-Upload working version
-Fix angle
-Clean code
+# TODO:
+- Upload working version
+- Fix angle
+- Clean code
